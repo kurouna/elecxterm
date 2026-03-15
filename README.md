@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./public/elecxterm_repo_card.svg" width="800" alt="elecxzy - Next-generation terminal manager">
+  <img src="./public/elecxterm_repo_card.svg" width="800" alt="electerm - Next-generation terminal manager">
 </p>
 
 
@@ -7,10 +7,18 @@
 [![Tauri](https://img.shields.io/badge/built%20with-Tauri-blue?logo=tauri)](https://tauri.app/)
 [![X](https://img.shields.io/badge/X-elecxzy-black)](https://x.com/elecxzy)
 
-**elecxterm** は、Tauri v2 と Rust で構築された、モダンでスタイリッシュな次世代ターミナルマネージャーです。  
+**elecxterm** は、Tauri v2 と Rust で構築された次世代ターミナルマネージャーです。  
 "elecxzy" エコシステムの一環として、直感的なタイリングレイアウト、高性能な PTY 管理、そして洗練されたユーザー体験を提供します。
 
-![elecxterm screenshot](./app-icon.svg)
+<img src="./public/screenshot-dark.png" width="480" alt="electerm - Next-generation terminal manager">　
+<img src="./public/screenshot-light.png" width="480" alt="electerm - Next-generation terminal manager">
+
+> [!WARNING]
+> **🚧 Project Status: Pre-release (Alpha) / 開発中（アルファ版）**
+>
+> This software is currently in an **early alpha stage**. Features are under active development, and some functions may be incomplete or unstable. Use with caution.
+>
+> 本ソフトウェアは現在、**開発初期のプレリリース（アルファ）版**です。すべての機能が完全に動作する状態ではなく、挙動が不安定な場合があります。あらかじめご了承ください。
 
 ## 🚀 主な機能
 
