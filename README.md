@@ -37,8 +37,10 @@
 | キー | アクション |
 | :--- | :--- |
 | `Ctrl+Shift+K` | コマンドパレットを開く |
-| `Ctrl+Shift+D` | ペインを横に分割 (Horizontal) |
-| `Ctrl+Shift+E` | ペインを縦に分割 (Vertical) |
+| `Ctrl+Shift+D` | ペインを横に分割(CMD) (Horizontal) |
+| `Ctrl+Shift+E` | ペインを縦に分割(CMD) (Vertical) |
+| `Ctrl+Alt+D` | ペインを横に分割(PowerShell) (Horizontal) |
+| `Ctrl+Alt+E` | ペインを縦に分割(PowerShell) (Vertical) |
 | `Ctrl+Shift+T` | 新しいタブを作成 |
 | `Ctrl+Shift+→` | 次のタブへ移動 |
 | `Ctrl+Shift+←` | 前のタブへ移動 |
