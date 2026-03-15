@@ -10,8 +10,10 @@
 **elecxterm** は、Tauri v2 と Rust で構築された次世代ターミナルマネージャーです。  
 "elecxzy" エコシステムの一環として、直感的なタイリングレイアウト、高性能な PTY 管理、そして洗練されたユーザー体験を提供します。
 
-<img src="./public/screenshot-dark.png" width="480" alt="electerm - Next-generation terminal manager">　
-<img src="./public/screenshot-light.png" width="480" alt="electerm - Next-generation terminal manager">
+<img src="./public/screenshot-dark.png" width="480" alt="electerm - Next-generation terminal manager dark theme">　
+<img src="./public/screenshot-light.png" width="480" alt="electerm - Next-generation terminal manager light theme">
+
+<img src="./public/screenshot-palette.png" width="480" alt="electerm - Next-generation terminal manager command palette">
 
 > [!WARNING]
 > **🚧 Project Status: Pre-release (Alpha) / 開発中（アルファ版）**
