@@ -113,6 +113,24 @@ function App() {
     { id: "theme-system", label: "Theme: Follow System", category: "THEME", action: () => setTheme("system") },
   ], [activePane, splitPane, closePane, addTab, nextTab, prevTab, setTheme, openCwdPrompt]);
 
+  // 現在存在する全ペインのIDを取得して、ステータスをフィルタリング
+  const filteredPaneStatuses = useMemo(() => {
+    const activeIds = new Set<string>();
+    const collectIds = (node: any) => {
+      if (node.type === "pane") activeIds.add(node.id);
+      else node.children?.forEach(collectIds);
+    };
+    tabs.forEach(t => collectIds(t.layout));
+    
+    const cleaned: Record<string, PaneStatus> = {};
+    for (const id in paneStatuses) {
+      if (activeIds.has(id)) {
+        cleaned[id] = paneStatuses[id];
+      }
+    }
+    return cleaned;
+  }, [tabs, paneStatuses]);
+
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden rounded-lg bg-bg-main shadow-2xl transition-colors duration-500">
       <TitleBar sessionName="elecxterm" />
@@ -142,7 +160,7 @@ function App() {
       </div>
 
       <StatusBar 
-        paneStatuses={paneStatuses} 
+        paneStatuses={filteredPaneStatuses} 
         activeTabNumber={tabs.findIndex(t => t.id === activeTabId) + 1} 
         totalTabs={tabs.length} 
       />
