@@ -1,6 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
 
 interface TitleBarProps {
   sessionName?: string;
