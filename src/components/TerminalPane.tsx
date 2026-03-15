@@ -14,7 +14,6 @@ interface TerminalPaneProps {
   onFocus: () => void;
   // 以下は store 経由で更新されるようになるが、まだ App.tsx 側で期待されているため残す
   onStatusChange?: (status: PaneStatus) => void;
-  onCwdChange?: (cwd: string) => void;
 }
 
 const DARK_THEME = {
@@ -72,7 +71,6 @@ export function TerminalPane({
   isActive,
   onFocus,
   onStatusChange,
-  onCwdChange,
 }: TerminalPaneProps) {
   const { resolvedTheme } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -81,7 +79,7 @@ export function TerminalPane({
   
   // マネージャー経由の揮発的な状態管理
   const { status: volatileStatus } = usePaneState(pane.id);
-  const { updateCwd, updateStatus } = usePaneStateActions();
+  const { updateStatus } = usePaneStateActions();
   
   const initializedRef = useRef(false);
 
@@ -93,13 +91,6 @@ export function TerminalPane({
     [pane.id, updateStatus, onStatusChange]
   );
 
-  const handleCwdUpdate = useCallback(
-    (newCwd: string) => {
-      updateCwd(pane.id, newCwd);
-      onCwdChange?.(newCwd);
-    },
-    [pane.id, updateCwd, onCwdChange]
-  );
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -141,33 +132,10 @@ export function TerminalPane({
       try {
         dataDisposable = terminal.onData((data) => {
           ptyBridge.write(pane.id, data);
-          if (data.includes("\r") || data.includes("\n")) {
-            setTimeout(async () => {
-              try {
-                const currentCwd = await ptyBridge.getPtyCwd(pane.id);
-                if (currentCwd && currentCwd !== pane.cwd) {
-                  handleCwdUpdate(currentCwd);
-                }
-              } catch (e) {}
-            }, 100);
-          }
         });
 
         unlistenPtyData = await ptyBridge.onData(pane.id, (data) => {
           terminal.write(data);
-          if (data.includes(0x1b)) {
-            const text = new TextDecoder().decode(data);
-            if (text.includes("\x1b]7;")) {
-              const match = text.match(/\x1b]7;file:\/\/[^\/]+(\/[^\x1b\x07]+)/);
-              if (match && match[1]) {
-                let path = match[1];
-                if (path.startsWith("/") && path.match(/^\/[a-zA-Z]:/)) {
-                  path = path.substring(1);
-                }
-                handleCwdUpdate(path);
-              }
-            }
-          }
         });
 
         unlistenExit = await ptyBridge.onExit(pane.id, () => {

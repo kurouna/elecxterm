@@ -47,16 +47,6 @@ pub fn get_cwd() -> Result<String, String> {
         .map_err(|e| format!("Failed to get current directory: {}", e))
 }
 
-#[tauri::command]
-pub fn get_pty_cwd(
-    state: State<'_, SharedPtyManager>,
-    id: String,
-) -> Result<String, String> {
-    let mut manager = state
-        .lock()
-        .map_err(|e| format!("Failed to lock pty manager: {}", e))?;
-    manager.get_pty_cwd(&id)
-}
 
 /// PTYインスタンスを破棄するコマンド
 #[tauri::command]

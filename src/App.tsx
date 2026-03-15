@@ -11,7 +11,6 @@ import { useLayout } from "./hooks/useLayout";
 import { useKeybinds } from "./hooks/useKeybinds";
 import { CommandItem } from "./types";
 import { useTheme } from "./ThemeContext";
-import { paneStateStore } from "./services/PaneStateStore";
 
 function App() {
   const { setTheme, resolvedTheme } = useTheme();
@@ -42,7 +41,6 @@ function App() {
     closeTab,
     renameTab,
     updateTabCwd,
-    updatePaneCwd,
     activePane,
     setActivePane,
     splitPane,
@@ -54,25 +52,6 @@ function App() {
     lastPane,
   } = useLayout();
 
-  // PaneStateStore の変更を監視して、永続化レイヤー（tabs）に同期する（デバウンス実行）
-  useEffect(() => {
-    let timer: any;
-    const syncToPersistentState = () => {
-      // 現在の volatile な CWD を tabs (useLayout) に反映する
-      // ここを呼ぶと全体が再描画されるので、頻度を大幅に下げる（2秒間静止後）
-      const statesEntries = Array.from((paneStateStore as any).states.entries()) as [string, any][];
-      for (const [id, state] of statesEntries) {
-        if (state.cwd) {
-          updatePaneCwd(id, state.cwd);
-        }
-      }
-    };
-
-    return paneStateStore.subscribeGlobal(() => {
-      clearTimeout(timer);
-      timer = setTimeout(syncToPersistentState, 2000);
-    });
-  }, [updatePaneCwd]);
 
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [promptConfig, setPromptConfig] = useState<{

@@ -5,7 +5,6 @@ import { PaneStatus } from "../types";
  * 巨大な tabs 状態の頻繁な更新と再描画を避けるために React の外で管理する
  */
 export interface PaneVolatileState {
-  cwd: string;
   status: PaneStatus;
 }
 
@@ -19,7 +18,7 @@ class PaneStateStore {
 
   /** 特定のペインの状態を取得 */
   getPaneState(id: string): PaneVolatileState {
-    return this.states.get(id) || { cwd: "", status: "running" };
+    return this.states.get(id) || { status: "running" };
   }
 
   /** 全てのステータスを取得（StatusBar用など） */
@@ -31,14 +30,6 @@ class PaneStateStore {
     return res;
   }
 
-  /** CWDを更新 */
-  updateCwd(id: string, cwd: string) {
-    const current = this.getPaneState(id);
-    if (current.cwd === cwd) return;
-    
-    this.states.set(id, { ...current, cwd });
-    this.notify(id);
-  }
 
   /** ステータスを更新 */
   updateStatus(id: string, status: PaneStatus) {

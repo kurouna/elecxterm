@@ -40,10 +40,6 @@ export function useAllPaneStatuses() {
  * ペインの状態を更新するための関数を提供するフック
  */
 export function usePaneStateActions() {
-  const updateCwd = useCallback((id: string, cwd: string) => {
-    paneStateStore.updateCwd(id, cwd);
-  }, []);
-
   const updateStatus = useCallback((id: string, status: PaneStatus) => {
     paneStateStore.updateStatus(id, status);
   }, []);
@@ -52,5 +48,5 @@ export function usePaneStateActions() {
     paneStateStore.deletePane(id);
   }, []);
 
-  return { updateCwd, updateStatus, deletePane };
+  return { updateStatus, deletePane };
 }

@@ -316,13 +316,6 @@ export function useLayout() {
     setTabs(prev => prev.map(t => t.id === id ? { ...t, name: newName } : t));
   }, []);
 
-  /** ペインの作業ディレクトリを動的に更新 */
-  const updatePaneCwd = useCallback((paneId: string, newCwd: string) => {
-    setTabs(prev => prev.map(t => ({
-      ...t,
-      layout: updateCwdInTreeForPane(t.layout, paneId, newCwd)
-    })));
-  }, []);
 
   /** タブの次回の開始ディレクトリを変更（既存のペインは変えない） */
   const updateTabCwd = useCallback((id: string, newCwd: string) => {
@@ -344,7 +337,6 @@ export function useLayout() {
     closeTab,
     renameTab,
     updateTabCwd,
-    updatePaneCwd,
     layout,
     activePane,
     setActivePane,
@@ -358,13 +350,6 @@ export function useLayout() {
   };
 }
 
-/** ユーティリティ関数（特定のペインのCWDを更新） */
-function updateCwdInTreeForPane(node: LayoutNode, paneId: string, newCwd: string): LayoutNode {
-  if (node.type === "pane") {
-    return node.id === paneId ? { ...node, cwd: newCwd } : node;
-  }
-  return { ...node, children: node.children.map(child => updateCwdInTreeForPane(child, paneId, newCwd)) };
-}
 
 function splitPaneInTree(node: LayoutNode, targetId: string, direction: "horizontal" | "vertical", newPaneId: string, newPaneOptions?: Partial<PaneNode>): LayoutNode {
   if (node.type === "pane") {
