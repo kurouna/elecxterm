@@ -79,48 +79,45 @@ export function CommandPalette({
         <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[12vh]">
           {/* Backdrop */}
           <motion.div
-            className="fixed inset-0 bg-black/50 backdrop-blur-[2px]"
+            className="fixed inset-0 bg-black/40 backdrop-blur-[2px]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
           />
 
-          {/* Dialog Container (VSCode-like size & style) */}
+          {/* VSCode-like Compact Dialog */}
           <motion.div
-            className="relative w-[90%] max-w-[560px] overflow-hidden rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#0c1117] shadow-2xl"
+            className="relative w-[90%] max-w-[640px] overflow-hidden rounded-xl border border-border-dim bg-bg-glass shadow-2xl backdrop-blur-3xl"
             initial={{ opacity: 0, scale: 0.99, y: -10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.99, y: -5 }}
             transition={{ type: "spring", damping: 25, stiffness: 350 }}
           >
             {/* Search Area */}
-            <div className="flex items-center gap-3 border-b border-black/[0.05] dark:border-white/5 px-4 py-2.5">
-              <Search size={18} className="text-accent-primary opacity-70" strokeWidth={2} />
+            <div className="flex items-center gap-3 border-b border-border-dim px-5 py-4 bg-bg-main/50">
+              <Search size={18} className="text-accent opacity-80" strokeWidth={2.5} />
               <input
                 ref={inputRef}
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="コマンドを検索..."
-                className="flex-1 bg-transparent text-[14px] font-medium text-text-primary outline-none placeholder:text-text-muted/40"
+                placeholder="Search commands..."
+                className="flex-1 bg-transparent text-[14px] font-medium text-tx-primary outline-none placeholder:text-tx-muted/40"
               />
-              <button 
-                onClick={onClose}
-                className="text-text-muted hover:text-text-primary transition-colors"
-              >
+              <button onClick={onClose} className="text-tx-muted hover:text-tx-primary transition-colors p-1">
                 <X size={16} />
               </button>
             </div>
 
             {/* List Area */}
-            <div
-              ref={scrollRef}
-              className="max-h-[360px] overflow-y-auto p-1 no-scrollbar"
+            <div 
+              ref={scrollRef} 
+              className="max-h-[580px] overflow-y-auto p-2 no-scrollbar"
             >
               {filteredCommands.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-text-muted/40">
-                  <p className="text-xs font-medium">結果が見つかりません</p>
+                <div className="py-12 text-center text-tx-muted opacity-50">
+                  <p className="text-xs font-medium">No results found</p>
                 </div>
               ) : (
                 filteredCommands.map((cmd, index) => {
@@ -128,10 +125,10 @@ export function CommandPalette({
                   return (
                     <div
                       key={cmd.id}
-                      className={`group flex cursor-pointer items-center justify-between rounded-md px-3 py-1.5 transition-all duration-75 ${
+                      className={`group flex items-center h-[46px] rounded-md transition-all duration-75 mb-1 mx-1 px-4 ${
                         isActive 
-                          ? "bg-accent-primary text-white" 
-                          : "text-text-secondary hover:bg-black/[0.04] dark:hover:bg-white/5"
+                          ? "bg-accent text-white shadow-sm" 
+                          : "text-tx-secondary hover:bg-accent-dim"
                       }`}
                       onClick={() => {
                         cmd.action();
@@ -139,29 +136,34 @@ export function CommandPalette({
                       }}
                       onMouseEnter={() => setSelectedIndex(index)}
                     >
-                      <div className="flex items-center gap-3">
-                        <ChevronRight 
-                          size={14} 
-                          className={`transition-colors ${isActive ? "text-white" : "text-text-muted/50"}`} 
-                          strokeWidth={2}
-                        />
-                        <div className="flex flex-col">
-                          <span className="text-[13px] font-medium tracking-tight">
-                            {cmd.label}
-                          </span>
-                          {cmd.category && !isActive && (
-                            <span className="text-[9px] uppercase tracking-wider opacity-50">
-                              {cmd.category}
+                      {/* Inner wrapper to handle layout and padding robustly */}
+                      <div className="flex items-center w-full pr-4">
+                        {/* Label Side */}
+                        <div className="flex items-center gap-4 flex-1 min-w-0">
+                          <ChevronRight 
+                            size={14} 
+                            className={`flex-shrink-0 transition-colors ${isActive ? "text-white" : "text-tx-muted/50"}`} 
+                            strokeWidth={2}
+                          />
+                          <div className="flex flex-col truncate">
+                            <span className="text-[14px] font-medium tracking-tight truncate leading-tight">
+                              {cmd.label}
                             </span>
-                          )}
+                            {!isActive && (
+                              <span className="text-[10px] uppercase tracking-wider text-tx-muted/60 leading-tight">
+                                {cmd.category}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
 
-                      {cmd.shortcut && (
-                        <div className={`text-[10px] ml-4 font-mono opacity-80 ${isActive ? "text-white" : "text-text-muted"}`}>
-                          {cmd.shortcut}
-                        </div>
-                      )}
+                        {/* Shortcut Side */}
+                        {cmd.shortcut && (
+                          <div className={`flex-shrink-0 font-mono text-[11px] ml-8 ${isActive ? "text-white" : "text-tx-muted/60"}`}>
+                            {cmd.shortcut}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 })
@@ -169,20 +171,20 @@ export function CommandPalette({
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-center gap-6 border-t border-black/[0.05] dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.02] px-4 py-2">
-              <div className="flex items-center gap-1.5 grayscale opacity-50">
-                <kbd className="text-[10px] font-mono border border-black/10 dark:border-white/10 px-1 rounded">↑↓</kbd>
-                <span className="text-[9px] uppercase tracking-widest font-medium">Move</span>
+            <div className="flex items-center justify-center gap-8 border-t border-border-dim bg-bg-main/30 px-4 py-3 opacity-60">
+              <div className="flex items-center gap-1.5 ">
+                <kbd className="text-[10px] font-mono border border-border-dim px-1.5 rounded bg-bg-surface/50 text-tx-secondary">↑↓</kbd>
+                <span className="text-[9px] uppercase tracking-widest font-medium text-tx-muted">Move</span>
               </div>
-              <div className="flex items-center gap-1.5 grayscale opacity-50">
-                <kbd className="text-[10px] font-mono border border-black/10 dark:border-white/10 px-1 rounded">
+              <div className="flex items-center gap-1.5 ">
+                <kbd className="text-[10px] font-mono border border-border-dim px-1.5 rounded bg-bg-surface/50 text-tx-secondary">
                   <CornerDownLeft size={8} />
                 </kbd>
-                <span className="text-[9px] uppercase tracking-widest font-medium">Select</span>
+                <span className="text-[9px] uppercase tracking-widest font-medium text-tx-muted">Select</span>
               </div>
-              <div className="flex items-center gap-1.5 grayscale opacity-50">
-                <kbd className="text-[10px] font-mono border border-black/10 dark:border-white/10 px-1 rounded">Esc</kbd>
-                <span className="text-[9px] uppercase tracking-widest font-medium">Close</span>
+              <div className="flex items-center gap-1.5 ">
+                <kbd className="text-[10px] font-mono border border-border-dim px-1.5 rounded bg-bg-surface/50 text-tx-secondary">Esc</kbd>
+                <span className="text-[9px] uppercase tracking-widest font-medium text-tx-muted">Close</span>
               </div>
             </div>
           </motion.div>

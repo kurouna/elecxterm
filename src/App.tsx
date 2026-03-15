@@ -61,21 +61,21 @@ function App() {
   });
 
   const commands: CommandItem[] = useMemo(() => [
-    { id: "new-tab", label: "新しいタブを作成", shortcut: "Ctrl+Shift+T", category: "全般", action: addTab },
-    { id: "split-h-cmd", label: "縦に分割 (CMD)", shortcut: "Ctrl+Shift+D", category: "レイアウト", action: () => activePane && splitPane(activePane, "horizontal", { shell: "cmd.exe" }) },
-    { id: "split-h-ps", label: "縦に分割 (PowerShell)", category: "レイアウト", action: () => activePane && splitPane(activePane, "horizontal", { shell: "powershell.exe" }) },
-    { id: "split-v-cmd", label: "横に分割 (CMD)", shortcut: "Ctrl+Shift+E", category: "レイアウト", action: () => activePane && splitPane(activePane, "vertical", { shell: "cmd.exe" }) },
-    { id: "split-v-ps", label: "横に分割 (PowerShell)", category: "レイアウト", action: () => activePane && splitPane(activePane, "vertical", { shell: "powershell.exe" }) },
-    { id: "close-pane", label: "ペインを閉じる", shortcut: "Ctrl+Shift+W", category: "レイアウト", action: () => activePane && closePane(activePane) },
-    { id: "next-tab", label: "次のタブへ移動", shortcut: "Ctrl+Shift+→", category: "全般", action: nextTab },
-    { id: "prev-tab", label: "前のタブへ移動", shortcut: "Ctrl+Shift+←", category: "全般", action: prevTab },
-    { id: "theme-dark", label: "テーマ: ダーク (Midnight)", category: "テーマ", action: () => setTheme("dark") },
-    { id: "theme-light", label: "テーマ: ライト (Daylight)", category: "テーマ", action: () => setTheme("light") },
-    { id: "theme-system", label: "テーマ: システム設定に従う", category: "テーマ", action: () => setTheme("system") },
+    { id: "new-tab", label: "Create New Tab", shortcut: "Ctrl+Shift+T", category: "General", action: addTab },
+    { id: "split-h-cmd", label: "Split Vertically (CMD)", shortcut: "Ctrl+Shift+D", category: "Layout", action: () => activePane && splitPane(activePane, "horizontal", { shell: "cmd.exe" }) },
+    { id: "split-h-ps", label: "Split Vertically (PowerShell)", shortcut: "Ctrl+Alt+D", category: "Layout", action: () => activePane && splitPane(activePane, "horizontal", { shell: "powershell.exe" }) },
+    { id: "split-v-cmd", label: "Split Horizontally (CMD)", shortcut: "Ctrl+Shift+E", category: "Layout", action: () => activePane && splitPane(activePane, "vertical", { shell: "cmd.exe" }) },
+    { id: "split-v-ps", label: "Split Horizontally (PowerShell)", shortcut: "Ctrl+Alt+E", category: "Layout", action: () => activePane && splitPane(activePane, "vertical", { shell: "powershell.exe" }) },
+    { id: "close-pane", label: "Close Pane", shortcut: "Ctrl+Shift+W", category: "Layout", action: () => activePane && closePane(activePane) },
+    { id: "next-tab", label: "Next Tab", shortcut: "Ctrl+Shift+→", category: "General", action: nextTab },
+    { id: "prev-tab", label: "Previous Tab", shortcut: "Ctrl+Shift+←", category: "General", action: prevTab },
+    { id: "theme-dark", label: "Theme: Dark (Midnight)", category: "Theme", action: () => setTheme("dark") },
+    { id: "theme-light", label: "Theme: Light (Daylight)", category: "Theme", action: () => setTheme("light") },
+    { id: "theme-system", label: "Theme: Follow System", category: "Theme", action: () => setTheme("system") },
   ], [activePane, splitPane, closePane, addTab, nextTab, prevTab, setTheme]);
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden rounded-lg bg-surface-primary shadow-2xl transition-colors duration-500">
+    <div className="flex h-screen w-screen flex-col overflow-hidden rounded-lg bg-bg-main shadow-2xl transition-colors duration-500">
       <TitleBar sessionName="elecxterm" />
       
       <TabBar

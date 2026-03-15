@@ -16,10 +16,10 @@ interface TerminalPaneProps {
 
 const DARK_THEME = {
   background: "#05070a",
-  foreground: "#e2e8f0",
+  foreground: "#f8fafc",
   cursor: "#818cf8",
   cursorAccent: "#05070a",
-  selectionBackground: "rgba(129, 140, 248, 0.25)",
+  selectionBackground: "rgba(129, 140, 248, 0.35)",
   selectionForeground: "#ffffff",
   black: "#0f172a",
   red: "#f87171",
@@ -41,26 +41,26 @@ const DARK_THEME = {
 
 const LIGHT_THEME = {
   background: "#ffffff",
-  foreground: "#1e293b",
-  cursor: "#3b82f6",
+  foreground: "#000000",
+  cursor: "#2563eb",
   cursorAccent: "#ffffff",
-  selectionBackground: "rgba(59, 130, 246, 0.15)",
-  selectionForeground: "#1e293b",
-  black: "#f1f5f9",
-  red: "#ef4444",
-  green: "#10b981",
-  yellow: "#f59e0b",
-  blue: "#3b82f6",
-  magenta: "#8b5cf6",
-  cyan: "#06b6d4",
-  white: "#1e293b",
-  brightBlack: "#94a3b8",
-  brightRed: "#fca5a5",
-  brightGreen: "#34d399",
-  brightYellow: "#fbbf24",
-  brightBlue: "#60a5fa",
-  brightMagenta: "#a78bfa",
-  brightCyan: "#22d3ee",
+  selectionBackground: "rgba(37, 99, 235, 0.2)",
+  selectionForeground: "#000000",
+  black: "#000000",
+  red: "#dc2626",
+  green: "#16a34a",
+  yellow: "#ca8a04",
+  blue: "#2563eb",
+  magenta: "#9333ea",
+  cyan: "#0891b2",
+  white: "#f8fafc",
+  brightBlack: "#64748b",
+  brightRed: "#ef4444",
+  brightGreen: "#22c55e",
+  brightYellow: "#eab308",
+  brightBlue: "#3b82f6",
+  brightMagenta: "#a855f7",
+  brightCyan: "#06b6d4",
   brightWhite: "#000000",
 };
 
@@ -85,20 +85,18 @@ export function TerminalPane({
     [onStatusChange]
   );
 
-  // 1. 初回マウント時にTerminalを1回だけ作成する
   useEffect(() => {
     if (!containerRef.current) return;
 
     const terminal = new Terminal({
       fontFamily: '"JetBrains Mono", "Cascadia Code", "Fira Code", monospace',
       fontSize: 14,
-      lineHeight: 1.25,
-      fontWeight: "400",
+      lineHeight: 1.5, // Matched with elecxzy
+      fontWeight: "normal", // Ensure normal weight for accuracy
       cursorBlink: true,
       cursorStyle: "bar",
       cursorWidth: 2,
       allowTransparency: true,
-      drawBoldTextInBrightColors: true,
       scrollback: 10000,
       theme: resolvedTheme === "dark" ? DARK_THEME : LIGHT_THEME,
     });
@@ -112,7 +110,7 @@ export function TerminalPane({
       webglAddon.onContextLoss(() => webglAddon.dispose());
       terminal.loadAddon(webglAddon);
     } catch (e) {
-      console.warn("WebGL addon failed to load, using canvas renderer:", e);
+      console.warn("WebGL addon failed to load:", e);
     }
 
     terminalRef.current = terminal;
@@ -123,10 +121,7 @@ export function TerminalPane({
 
     const setupTerminal = async () => {
       try {
-        unlistenData = await ptyBridge.onData(pane.id, (data) => {
-          terminal.write(data);
-        });
-        
+        unlistenData = await ptyBridge.onData(pane.id, (data) => terminal.write(data));
         unlistenExit = await ptyBridge.onExit(pane.id, () => {
           updateStatus("exited");
           terminal.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
@@ -172,52 +167,46 @@ export function TerminalPane({
       terminal.dispose();
       terminalRef.current = null;
     };
-  }, [pane.id]); // resolvedThemeを依存配列から外し、再作成を防ぐ
+  }, [pane.id]);
 
-  // 2. テーマが変更された時、オプションのみを更新する
   useEffect(() => {
     if (terminalRef.current) {
       terminalRef.current.options.theme = resolvedTheme === "dark" ? DARK_THEME : LIGHT_THEME;
-      // 再描画を促す
       terminalRef.current.refresh(0, terminalRef.current.rows - 1);
     }
   }, [resolvedTheme]);
 
-  // 3. アクティブ状態のフォーカス管理
   useEffect(() => {
     if (isActive && terminalRef.current) {
       terminalRef.current.focus();
     }
   }, [isActive]);
 
-  const borderStyle = status === "error" 
-    ? "border-[var(--color-border-error)] shadow-[0_0_8px_var(--color-glow-error)]"
-    : isActive 
-      ? "border-[var(--color-border-active)] shadow-[0_0_10px_var(--color-glow-active)]"
-      : "border-[var(--color-border-default)]";
+  const borderClass = status === "error"
+    ? "border-border-error shadow-[0_0_10px_rgba(220,38,38,0.3)]"
+    : isActive
+      ? "border-accent shadow-[0_0_12px_var(--color-accent-dim)]"
+      : "border-border-dim";
 
   return (
     <div
-      className={`relative h-full w-full overflow-hidden rounded-md border ${borderStyle}`}
+      className={`terminal-container relative h-full w-full overflow-hidden rounded-md border transition-all duration-300 ${borderClass}`}
       onClick={onFocus}
       style={{
-        backgroundColor: isActive 
-          ? "var(--color-surface-secondary)" 
-          : "var(--color-surface-primary)",
+        backgroundColor: isActive ? "var(--bg-surface)" : "var(--bg-main)",
       }}
     >
-      <div className="absolute top-1 right-2 z-10 flex items-center gap-2 px-2 py-0.5 rounded-full bg-surface-primary/40 backdrop-blur-md border border-white/5">
+      {/* Status Badge */}
+      <div className="absolute top-1 right-2 z-10 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-bg-main/30 backdrop-blur-md border border-tx-primary/5">
         <div
           className={`h-1.5 w-1.5 rounded-full ${
             status === "running"
-              ? isActive 
-                ? "bg-[#4ade80] shadow-[0_0_8px_#4ade80] animate-pulse" 
-                : "bg-[#4ade80]/30"
-              : "bg-[#ef4444] shadow-[0_0_8px_#ef4444]"
-          }`}
+              ? "bg-[#22c55e]" 
+              : "bg-[#ef4444]"
+          } ${isActive && status === "running" ? "shadow-[0_0_8px_#22c55e] animate-pulse" : ""}`}
         />
         {isActive && status === "running" && (
-          <span className="text-[9px] font-bold text-[#4ade80]/90 uppercase tracking-widest">
+          <span className="text-[8px] font-bold text-[#22c55e] uppercase tracking-widest leading-none" style={{ marginTop: '1px' }}>
             Active
           </span>
         )}
