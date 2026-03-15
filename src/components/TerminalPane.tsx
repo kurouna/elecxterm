@@ -95,7 +95,7 @@ export function TerminalPane({
       fontFamily: '"Cascadia Mono", "JetBrains Mono", "Noto Sans JP", "BIZ UDGothic", "Meiryo", "Yu Gothic", Consolas, monospace',
       fontSize: 14,
       lineHeight: 1.2,
-      fontWeight: 'normal', 
+      fontWeight: '500', 
       fontWeightBold: 'bold',
       cursorBlink: true,
       cursorStyle: "bar",
@@ -116,10 +116,8 @@ export function TerminalPane({
       const webglAddon = new WebglAddon();
       webglAddon.onContextLoss(() => {
         webglAddon.dispose();
-        terminal.options.fontWeight = 'normal';
       });
       terminal.loadAddon(webglAddon);
-      terminal.options.fontWeight = '500';
     } catch (e) {
       console.warn("WebGL addon failed to load:", e);
     }
