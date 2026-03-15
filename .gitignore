@@ -1,0 +1,34 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build outputs
+/dist/
+/dist-ssr/
+/*.local
+
+# Rust / Tauri
+/src-tauri/target/
+/src-tauri/icons/
+/src-tauri/gen/
+
+# IDEs / Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# App specific
+elecxterm-settings.json
+
+# Temporary files
+/tmp/
+.gemini/

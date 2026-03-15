@@ -1,0 +1,153 @@
+@import "tailwindcss";
+
+/* ===== elecxterm Design System ===== */
+
+@theme {
+  --color-surface-primary: #05070a;
+  --color-surface-secondary: #0d1117;
+  --color-surface-elevated: #161b22;
+  --color-surface-glass: rgba(13, 17, 23, 0.6);
+
+  --color-border-default: rgba(99, 102, 241, 0.1);
+  --color-border-active: rgba(99, 102, 241, 0.4);
+  --color-border-error: rgba(239, 68, 68, 0.5);
+
+  --color-accent-primary: #818cf8;
+  --color-accent-secondary: #a78bfa;
+  --color-accent-cyan: #67e8f9;
+  --color-accent-emerald: #34d399;
+
+  --color-text-primary: #e2e8f0;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted: #475569;
+
+  --color-glow-active: rgba(99, 102, 241, 0.15);
+  --color-glow-error: rgba(239, 68, 68, 0.15);
+  --color-glow-success: rgba(52, 211, 153, 0.15);
+
+  --font-mono: "JetBrains Mono", "Cascadia Code", "Fira Code", monospace;
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+}
+
+/* ===== Base Reset ===== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: transparent;
+  font-family: var(--font-sans);
+  color: var(--color-text-primary);
+}
+
+body {
+  background: var(--color-surface-primary);
+}
+
+/* ===== Scrollbar ===== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.3);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.5);
+}
+
+/* ===== Selection ===== */
+::selection {
+  background: rgba(99, 102, 241, 0.35);
+  color: var(--color-text-primary);
+}
+
+/* ===== xterm.js overrides ===== */
+.xterm {
+  padding: 4px 8px;
+}
+
+.xterm-viewport::-webkit-scrollbar {
+  width: 6px;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.3);
+  border-radius: 3px;
+}
+
+/* ===== Glassmorphism utility ===== */
+.glass {
+  background: var(--color-surface-glass);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+/* ===== Glow animation ===== */
+@keyframes glow-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.glow-active {
+  box-shadow: 0 0 12px var(--color-glow-active), inset 0 0 12px var(--color-glow-active);
+}
+
+.glow-error {
+  box-shadow: 0 0 12px var(--color-glow-error), inset 0 0 12px var(--color-glow-error);
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+/* ===== Title bar drag region ===== */
+.titlebar-drag {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.titlebar-no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* ===== Pane resize handle ===== */
+.resize-handle {
+  position: relative;
+  z-index: 10;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.resize-handle:hover {
+  background-color: var(--color-accent-primary);
+  box-shadow: 0 0 8px var(--color-glow-active);
+}
+
+.resize-handle-horizontal {
+  width: 2px;
+  cursor: col-resize;
+  min-width: 2px;
+}
+
+.resize-handle-vertical {
+  height: 2px;
+  cursor: row-resize;
+  min-height: 2px;
+}
