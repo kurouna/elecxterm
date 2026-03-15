@@ -145,6 +145,7 @@ export function TerminalPane({
 
         if (!initializedRef.current) {
           initializedRef.current = true;
+          handleStatusUpdate("running");
           const dims = fitAddon.proposeDimensions();
           await ptyBridge.create({
             id: pane.id,
@@ -154,7 +155,6 @@ export function TerminalPane({
             cols: dims?.cols ?? 80,
           });
         }
-        handleStatusUpdate("running");
 
         terminal.onResize(({ rows, cols }) => ptyBridge.resize(pane.id, rows, cols));
 

@@ -33,10 +33,11 @@ class PaneStateStore {
 
   /** ステータスを更新 */
   updateStatus(id: string, status: PaneStatus) {
+    const isNew = !this.states.has(id);
     const current = this.getPaneState(id);
-    if (current.status === status) return;
+    if (!isNew && current.status === status) return;
 
-    this.states.set(id, { ...current, status });
+    this.states.set(id, { status });
     this.notify(id);
   }
 
