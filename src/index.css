@@ -10,16 +10,16 @@
   --color-bg-surface: var(--bg-surface);
   --color-bg-elevated: var(--bg-elevated);
   --color-bg-glass: var(--bg-glass);
-  
+
   --color-border-dim: var(--border-dim);
   --color-border-bright: var(--border-bright);
   --color-border-error: var(--border-error);
-  
+
   --color-accent: var(--accent);
   --color-accent-dim: var(--accent-dim);
-  
+
   --color-status-green: #22c55e;
-  
+
   --color-tx-primary: var(--tx-primary);
   --color-tx-secondary: var(--tx-secondary);
   --color-tx-muted: var(--tx-muted);
@@ -55,16 +55,16 @@ html[data-theme='light'] {
   --bg-elevated: #f4f6f9;
   --bg-glass: rgba(255, 255, 255, 0.98);
 
-  --border-dim: #cbd5e1; 
+  --border-dim: #cbd5e1;
   --border-bright: #2563eb;
   --border-error: #dc2626;
 
   --accent: #2563eb;
   --accent-dim: rgba(37, 99, 235, 0.1);
 
-  --tx-primary: #000000;   
-  --tx-secondary: #000000; 
-  --tx-muted: #475569;    
+  --tx-primary: #000000;
+  --tx-secondary: #000000;
+  --tx-muted: #334155;
 }
 
 /* Base Reset & Core Styles */
@@ -81,27 +81,28 @@ body {
   background-color: var(--bg-main);
   color: var(--tx-primary);
   font-family: var(--font-sans);
-  
-  /* elecxzy rendering stack */
+
+  /* Windowsでの文字描画最適化 */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  font-synthesis: none;
 }
 
 /* High-quality rendering for terminal area */
 .terminal-container {
-  transform: translateZ(0); /* For GPU acceleration & smoother fonts */
+  image-rendering: auto;
 }
 
 /* Force xterm.js internal elements to respect font settings */
 .xterm-rows {
-  font-weight: normal !important;
   white-space: pre !important;
+  font-variant-ligatures: none;
 }
 
 /* Force xterm.js to be transparent so we see our backgrounds */
-.xterm-viewport, 
-.xterm-screen, 
+.xterm-viewport,
+.xterm-screen,
 .xterm-main-slot {
   background-color: transparent !important;
 }
@@ -110,10 +111,16 @@ body {
 ::-webkit-scrollbar {
   display: none !important;
 }
+
 * {
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
 }
 
-.titlebar-drag { -webkit-app-region: drag; }
-.titlebar-no-drag { -webkit-app-region: no-drag; }
+.titlebar-drag {
+  -webkit-app-region: drag;
+}
+
+.titlebar-no-drag {
+  -webkit-app-region: no-drag;
+}

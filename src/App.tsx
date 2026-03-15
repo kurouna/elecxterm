@@ -17,6 +17,7 @@ function App() {
     setActiveTabId,
     addTab,
     closeTab,
+    renameTab,
     activePane,
     setActivePane,
     splitPane,
@@ -83,6 +84,7 @@ function App() {
         activeTabId={activeTabId}
         onTabSelect={setActiveTabId}
         onTabClose={closeTab}
+        onTabRename={renameTab}
         onTabAdd={() => addTab()}
       />
 

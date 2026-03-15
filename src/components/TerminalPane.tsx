@@ -88,11 +88,13 @@ export function TerminalPane({
   useEffect(() => {
     if (!containerRef.current) return;
 
+    // Build terminal with requested fonts and BOLD to fix blur on Windows
     const terminal = new Terminal({
-      fontFamily: '"JetBrains Mono", "Cascadia Code", "Fira Code", monospace',
+      fontFamily: '"Cascadia Mono", "JetBrains Mono", "Noto Sans JP", "BIZ UDGothic", "Meiryo", "Yu Gothic", Consolas, monospace',
       fontSize: 14,
-      lineHeight: 1.5, // Matched with elecxzy
-      fontWeight: "normal", // Ensure normal weight for accuracy
+      lineHeight: 1.5,
+      fontWeight: '500', // 物理的に線を太くしてかすれを解消
+      fontWeightBold: 'bold',
       cursorBlink: true,
       cursorStyle: "bar",
       cursorWidth: 2,
@@ -103,8 +105,11 @@ export function TerminalPane({
 
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
+
+    // mount after setup
     terminal.open(containerRef.current);
 
+    // load WebGL addon to fix blurriness
     try {
       const webglAddon = new WebglAddon();
       webglAddon.onContextLoss(() => webglAddon.dispose());
@@ -156,7 +161,7 @@ export function TerminalPane({
     setupTerminal();
 
     const observer = new ResizeObserver(() => {
-      try { fitAddon.fit(); } catch {}
+      try { fitAddon.fit(); } catch { }
     });
     observer.observe(containerRef.current);
 
@@ -196,14 +201,12 @@ export function TerminalPane({
         backgroundColor: isActive ? "var(--bg-surface)" : "var(--bg-main)",
       }}
     >
-      {/* Status Badge */}
       <div className="absolute top-1 right-2 z-10 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-bg-main/30 backdrop-blur-md border border-tx-primary/5">
         <div
-          className={`h-1.5 w-1.5 rounded-full ${
-            status === "running"
-              ? "bg-[#22c55e]" 
-              : "bg-[#ef4444]"
-          } ${isActive && status === "running" ? "shadow-[0_0_8px_#22c55e] animate-pulse" : ""}`}
+          className={`h-1.5 w-1.5 rounded-full ${status === "running"
+            ? "bg-[#22c55e]"
+            : "bg-[#ef4444]"
+            } ${isActive && status === "running" ? "shadow-[0_0_8px_#22c55e] animate-pulse" : ""}`}
         />
         {isActive && status === "running" && (
           <span className="text-[8px] font-bold text-[#22c55e] uppercase tracking-widest leading-none" style={{ marginTop: '1px' }}>

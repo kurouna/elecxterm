@@ -10,11 +10,27 @@ function generateId(): string {
   return `id-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
+/** 最初のペインを見つける (Hoisted) */
+function findFirstPane(node: LayoutNode): PaneNode | null {
+  if (node.type === "pane") return node;
+  for (const child of node.children) {
+    const found = findFirstPane(child);
+    if (found) return found;
+  }
+  return null;
+}
+
 /** レイアウトとタブの操作フック */
 export function useLayout() {
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string>("");
   const [isLoaded, setIsLoaded] = useState(false);
+
+  /** 全ペインIDを順序通りに取得 */
+  const getAllPaneIds = useCallback((node: LayoutNode): string[] => {
+    if (node.type === "pane") return [node.id];
+    return node.children.flatMap(child => getAllPaneIds(child));
+  }, []);
 
   // 現在のアクティブタブを取得
   const activeTab = useMemo(() => {
@@ -50,19 +66,31 @@ export function useLayout() {
     setActiveTabId(newTab.id);
   }, [tabs.length]);
 
-  /** タブを閉じる */
   const closeTab = useCallback((id: string) => {
+    // 1. PTY cleanup
     const tabToClose = tabs.find(t => t.id === id);
     if (tabToClose) {
-      // タブ内のすべての PTY を破棄
       const paneIds = getAllPaneIds(tabToClose.layout);
       paneIds.forEach(pid => ptyBridge.destroy(pid).catch(() => {}));
     }
 
+    // 2. Calculate next active tab before filtering
+    let nextActiveId: string | null = null;
+    if (activeTabId === id) {
+      const index = tabs.findIndex(t => t.id === id);
+      const filtered = tabs.filter(t => t.id !== id);
+      if (filtered.length > 0) {
+        // Select the tab before the closed one (or the first one if the closed one was first)
+        const nextIndex = Math.max(0, index - 1);
+        nextActiveId = filtered[nextIndex].id;
+      }
+    }
+
+    // 3. Update tabs list
     setTabs((prev) => {
       const filtered = prev.filter((t) => t.id !== id);
+      
       if (filtered.length === 0) {
-        // 全て閉じたら新しいタブを作成
         const newTab: Tab = {
           id: generateId(),
           name: "Tab 1",
@@ -71,21 +99,17 @@ export function useLayout() {
         };
         const first = findFirstPane(newTab.layout);
         if (first) newTab.activePaneId = first.id;
+        setActiveTabId(newTab.id);
         return [newTab];
       }
+      
+      if (nextActiveId) {
+        setActiveTabId(nextActiveId);
+      }
+      
       return filtered;
     });
-
-    if (activeTabId === id) {
-      setTabs((prev) => {
-        if (prev.length > 0) {
-          const index = prev.findIndex(t => t.id === id);
-          setActiveTabId(prev[Math.max(0, index - 1)].id);
-        }
-        return prev;
-      });
-    }
-  }, [tabs, activeTabId]);
+  }, [tabs, activeTabId, setActiveTabId, getAllPaneIds]);
 
   // セッションの読み込み
   useEffect(() => {
@@ -144,15 +168,6 @@ export function useLayout() {
     return () => clearTimeout(timer);
   }, [tabs, activeTabId, isLoaded]);
 
-  /** 最初のペインを見つける */
-  function findFirstPane(node: LayoutNode): PaneNode | null {
-    if (node.type === "pane") return node;
-    for (const child of node.children) {
-      const found = findFirstPane(child);
-      if (found) return found;
-    }
-    return null;
-  }
 
   /** アクティブタブのペインをアクティブにする */
   const setActivePane = useCallback((paneId: string) => {
@@ -219,11 +234,6 @@ export function useLayout() {
     [activeTabId]
   );
 
-  /** 全ペインIDを順序通りに取得 */
-  const getAllPaneIds = useCallback((node: LayoutNode): string[] => {
-    if (node.type === "pane") return [node.id];
-    return node.children.flatMap(child => getAllPaneIds(child));
-  }, []);
 
   /** 次のペインへ移動 */
   const nextPane = useCallback(() => {
@@ -261,12 +271,18 @@ export function useLayout() {
     if (ids.length > 0) setActivePane(ids[ids.length - 1]);
   }, [layout, getAllPaneIds, setActivePane]);
 
+  /** タブの名前を変更 */
+  const renameTab = useCallback((id: string, newName: string) => {
+    setTabs(prev => prev.map(t => t.id === id ? { ...t, name: newName } : t));
+  }, []);
+
   return {
     tabs,
     activeTabId,
     setActiveTabId,
     addTab,
     closeTab,
+    renameTab,
     layout,
     activePane,
     setActivePane,
