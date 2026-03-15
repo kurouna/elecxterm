@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { TitleBar } from "./components/TitleBar";
+import { TabBar } from "./components/TabBar";
 import { SplitLayout } from "./components/SplitLayout";
 import { CommandPalette } from "./components/CommandPalette";
 import { useLayout } from "./hooks/useLayout";
@@ -7,13 +8,17 @@ import { CommandItem, PaneStatus } from "./types";
 
 function App() {
   const {
+    tabs,
+    activeTabId,
+    setActiveTabId,
+    addTab,
+    closeTab,
     layout,
     activePane,
     setActivePane,
     splitPane,
     closePane,
     updateRatio,
-    ensureActivePane,
     nextPane,
     prevPane,
     firstPane,
@@ -25,11 +30,6 @@ function App() {
     {}
   );
 
-  // 初回レンダリング時にアクティブペインを設定
-  useEffect(() => {
-    ensureActivePane(layout);
-  }, []);
-
   // ペインステータス変更ハンドラ
   const handlePaneStatusChange = useCallback(
     (id: string, status: PaneStatus) => {
@@ -38,9 +38,35 @@ function App() {
     []
   );
 
+  /** タブを次へ */
+  const nextTab = useCallback(() => {
+    const currentIndex = tabs.findIndex(t => t.id === activeTabId);
+    if (currentIndex !== -1) {
+      const nextIndex = (currentIndex + 1) % tabs.length;
+      setActiveTabId(tabs[nextIndex].id);
+    }
+  }, [tabs, activeTabId, setActiveTabId]);
+
+  /** タブを前へ */
+  const prevTab = useCallback(() => {
+    const currentIndex = tabs.findIndex(t => t.id === activeTabId);
+    if (currentIndex !== -1) {
+      const prevIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+      setActiveTabId(tabs[prevIndex].id);
+    }
+  }, [tabs, activeTabId, setActiveTabId]);
+
   // コマンドパレットのコマンド一覧
   const commands: CommandItem[] = useMemo(
     () => [
+      {
+        id: "new-tab",
+        label: "新しいタブを作成",
+        description: "新しいセッションを開始します",
+        shortcut: "Ctrl+Shift+T",
+        category: "全般",
+        action: () => addTab(),
+      },
       {
         id: "split-h-cmd",
         label: "画面を縦に分割 (CMD)",
@@ -49,15 +75,6 @@ function App() {
         category: "レイアウト",
         action: () => {
           if (activePane) splitPane(activePane, "horizontal", { shell: "cmd.exe" });
-        },
-      },
-      {
-        id: "split-h-ps",
-        label: "画面を縦に分割 (PowerShell)",
-        description: "PowerShell を右側に開きます",
-        category: "レイアウト",
-        action: () => {
-          if (activePane) splitPane(activePane, "horizontal", { shell: "powershell.exe" });
         },
       },
       {
@@ -71,15 +88,6 @@ function App() {
         },
       },
       {
-        id: "split-v-ps",
-        label: "画面を横に分割 (PowerShell)",
-        description: "PowerShell を下側に開きます",
-        category: "レイアウト",
-        action: () => {
-          if (activePane) splitPane(activePane, "vertical", { shell: "powershell.exe" });
-        },
-      },
-      {
         id: "close-pane",
         label: "ペインを閉じる (Close)",
         description: "アクティブなペインを閉じます",
@@ -90,24 +98,21 @@ function App() {
         },
       },
       {
-        id: "clear-layout",
-        label: "レイアウトをリセット",
-        description: "すべての分割を解除して単一ペインに戻します",
-        category: "一般",
-        action: () => {
-          // 簡易的なリセット
-          window.location.reload();
-        },
+        id: "next-tab",
+        label: "次のタブへ移動",
+        shortcut: "Ctrl+Shift+→",
+        category: "全般",
+        action: () => nextTab(),
       },
       {
-        id: "toggle-command-palette",
-        label: "コマンドパレットを表示",
-        shortcut: "Ctrl+Shift+P",
-        category: "一般",
-        action: () => {}, // ダミー
+        id: "prev-tab",
+        label: "前のタブへ移動",
+        shortcut: "Ctrl+Shift+←",
+        category: "全般",
+        action: () => prevTab(),
       },
     ],
-    [activePane, splitPane, closePane]
+    [activePane, splitPane, closePane, addTab, nextTab, prevTab]
   );
 
   // グローバルキーボードショートカット
@@ -118,6 +123,29 @@ function App() {
         e.preventDefault();
         e.stopPropagation();
         setCommandPaletteOpen((prev) => !prev);
+        return;
+      }
+
+      // 新しいタブ (Ctrl+Shift+T)
+      if (e.ctrlKey && e.shiftKey && e.key === "T") {
+        e.preventDefault();
+        addTab();
+        return;
+      }
+
+      // タブ切り替え: 次へ (Ctrl+Shift+→)
+      if (e.ctrlKey && e.shiftKey && e.key === "ArrowRight") {
+        e.preventDefault();
+        e.stopPropagation();
+        nextTab();
+        return;
+      }
+
+      // タブ切り替え: 前へ (Ctrl+Shift+←)
+      if (e.ctrlKey && e.shiftKey && e.key === "ArrowLeft") {
+        e.preventDefault();
+        e.stopPropagation();
+        prevTab();
         return;
       }
 
@@ -135,35 +163,35 @@ function App() {
         return;
       }
 
-      // シェル移動: 先頭へ (Ctrl+Shift+<) - 日本語キーボード等考慮して "," もチェック
+      // シェル移動: 先頭へ (Ctrl+Shift+<)
       if (e.ctrlKey && e.shiftKey && (e.key === "<" || e.key === ",")) {
         e.preventDefault();
         firstPane();
         return;
       }
 
-      // シェル移動: 最後へ (Ctrl+Shift+>) - 日本語キーボード等考慮して "." もチェック
+      // シェル移動: 最後へ (Ctrl+Shift+>)
       if (e.ctrlKey && e.shiftKey && (e.key === ">" || e.key === ".")) {
         e.preventDefault();
         lastPane();
         return;
       }
 
-      // 縦分割
+      // 縦分割 (Ctrl+Shift+D)
       if (e.ctrlKey && e.shiftKey && e.key === "D") {
         e.preventDefault();
         if (activePane) splitPane(activePane, "horizontal");
         return;
       }
 
-      // 横分割
+      // 横分割 (Ctrl+Shift+E)
       if (e.ctrlKey && e.shiftKey && e.key === "E") {
         e.preventDefault();
         if (activePane) splitPane(activePane, "vertical");
         return;
       }
 
-      // ペインを閉じる
+      // ペインを閉じる (Ctrl+Shift+W)
       if (e.ctrlKey && e.shiftKey && e.key === "W") {
         e.preventDefault();
         if (activePane) closePane(activePane);
@@ -173,24 +201,36 @@ function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activePane, splitPane, closePane]);
+  }, [activePane, splitPane, closePane, addTab, nextTab, prevTab, nextPane, prevPane, firstPane, lastPane]);
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden rounded-lg bg-surface-primary">
       {/* カスタムタイトルバー */}
       <TitleBar sessionName="elecxterm" />
 
+      {/* タブバー */}
+      <TabBar
+        tabs={tabs}
+        activeTabId={activeTabId}
+        onTabSelect={setActiveTabId}
+        onTabClose={closeTab}
+        onTabAdd={() => addTab()}
+      />
+
       {/* メインコンテンツエリア */}
       <div className="flex-1 overflow-hidden p-0.5">
-        <SplitLayout
-          node={layout}
-          activePane={activePane}
-          onPaneActivate={setActivePane}
-          onPaneStatusChange={handlePaneStatusChange}
-          onRatioChange={(path, ratios) => {
-            updateRatio(path, ratios);
-          }}
-        />
+        {layout && (
+          <SplitLayout
+            key={activeTabId} // タブ切り替え時にリマウント
+            node={layout}
+            activePane={activePane}
+            onPaneActivate={setActivePane}
+            onPaneStatusChange={handlePaneStatusChange}
+            onRatioChange={(path, ratios) => {
+              updateRatio(path, ratios);
+            }}
+          />
+        )}
       </div>
 
       {/* ステータスバー */}
@@ -200,22 +240,20 @@ function App() {
             <div className="h-1.5 w-1.5 rounded-full bg-accent-emerald shadow-[0_0_5px_rgba(52,211,153,0.3)] animate-pulse" />
             <span className="font-semibold text-text-secondary">{Object.values(paneStatuses).filter((s) => s === "running").length}</span> RUNNING
           </span>
+          <span className="text-[8px] opacity-40">|</span>
+          <span className="opacity-80 uppercase tracking-tighter">Tab: {tabs.findIndex(t => t.id === activeTabId) + 1} / {tabs.length}</span>
         </div>
 
         <div className="flex items-center gap-6 uppercase tracking-widest font-bold">
-          {/* レイアウト操作 */}
           <div className="flex gap-4 border-r border-border-default/10 pr-6">
+            <span className="flex gap-1.5">Tab <span className="text-text-secondary">^⇧T</span></span>
             <span className="flex gap-1.5">Split <span className="text-text-secondary">^⇧D/E</span></span>
-            <span className="flex gap-1.5">Close <span className="text-text-secondary">^⇧W</span></span>
           </div>
 
-          {/* ナビゲーション */}
           <div className="flex gap-4 border-r border-border-default/10 pr-6">
-            <span className="flex gap-1.5">Move <span className="text-text-secondary">^⇧P/N</span></span>
-            <span className="flex gap-1.5">Edge <span className="text-text-secondary">^⇧&lt;/&gt;</span></span>
+            <span className="flex gap-1.5">Pane <span className="text-text-secondary">^⇧P/N</span></span>
           </div>
 
-          {/* パレット */}
           <div className="flex items-center gap-2 text-accent-primary">
             <span className="animate-pulse text-[8px]">●</span>
             <span>Palette <span className="text-text-primary font-black">^⇧K</span></span>
@@ -223,7 +261,6 @@ function App() {
         </div>
       </div>
 
-      {/* コマンドパレット */}
       <CommandPalette
         isOpen={commandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}

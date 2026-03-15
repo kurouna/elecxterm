@@ -53,7 +53,7 @@ export function TitleBar({ sessionName = "elecxterm" }: TitleBarProps) {
             alt="logo"
             className="w-5 h-5 object-contain"
           />
-          <span className="text-[11px] font-bold tracking-tight text-text-primary uppercase opacity-90">
+          <span className="text-[11px] font-bold tracking-tight text-text-primary opacity-90">
             {sessionName}
           </span>
         </div>

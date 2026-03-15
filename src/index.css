@@ -151,3 +151,11 @@ body {
   cursor: row-resize;
   min-height: 2px;
 }
+
+/* ===== Utilities ===== */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

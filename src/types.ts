@@ -18,11 +18,20 @@ export interface SplitNode {
   ratio: number[];
 }
 
+/** タブ情報 */
+export interface Tab {
+  id: string;
+  name: string;
+  layout: LayoutNode;
+  activePaneId: string;
+}
+
 /** セッション情報 */
 export interface Session {
   id: string;
   name: string;
-  layout: LayoutNode;
+  tabs: Tab[];
+  activeTabId: string;
 }
 
 /** セッション管理の最上位データ */
