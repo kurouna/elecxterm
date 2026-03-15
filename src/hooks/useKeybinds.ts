@@ -17,6 +17,11 @@ interface KeybindOptions {
 export function useKeybinds(options: KeybindOptions) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Block default browser reload behavior (Ctrl+R, F5)
+      if ((e.ctrlKey && e.key.toLowerCase() === "r") || e.key === "F5") {
+        e.preventDefault();
+      }
+
       if (!e.ctrlKey) return;
 
       // Ctrl+Shift
