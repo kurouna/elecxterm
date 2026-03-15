@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useMemo } from "react";
 import { LayoutNode, PaneNode, Tab } from "../types";
 import { load } from "@tauri-apps/plugin-store";
+import { ptyBridge } from "../pty-bridge";
 
 const STORE_PATH = "elecxterm-settings.json";
 
@@ -51,6 +52,13 @@ export function useLayout() {
 
   /** タブを閉じる */
   const closeTab = useCallback((id: string) => {
+    const tabToClose = tabs.find(t => t.id === id);
+    if (tabToClose) {
+      // タブ内のすべての PTY を破棄
+      const paneIds = getAllPaneIds(tabToClose.layout);
+      paneIds.forEach(pid => ptyBridge.destroy(pid).catch(() => {}));
+    }
+
     setTabs((prev) => {
       const filtered = prev.filter((t) => t.id !== id);
       if (filtered.length === 0) {
@@ -71,12 +79,13 @@ export function useLayout() {
     if (activeTabId === id) {
       setTabs((prev) => {
         if (prev.length > 0) {
-          setActiveTabId(prev[Math.max(0, prev.findIndex(t => t.id === id) - 1)].id);
+          const index = prev.findIndex(t => t.id === id);
+          setActiveTabId(prev[Math.max(0, index - 1)].id);
         }
         return prev;
       });
     }
-  }, [activeTabId]);
+  }, [tabs, activeTabId]);
 
   // セッションの読み込み
   useEffect(() => {
@@ -130,7 +139,8 @@ export function useLayout() {
       }
     }
     
-    const timer = setTimeout(saveSession, 1000);
+    // 状態が変更されたら即座に、あるいは短いバッファで保存
+    const timer = setTimeout(saveSession, 500);
     return () => clearTimeout(timer);
   }, [tabs, activeTabId, isLoaded]);
 
@@ -175,6 +185,9 @@ export function useLayout() {
   /** ペインを閉じる */
   const closePane = useCallback(
     (paneId: string) => {
+      // PTY を明示的に破棄
+      ptyBridge.destroy(paneId).catch(() => {});
+
       setTabs((prev) => prev.map(tab => {
         if (tab.id !== activeTabId) return tab;
         const newLayout = removePaneFromTree(tab.layout, paneId) || createDefaultLayout();

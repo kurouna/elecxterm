@@ -1,6 +1,6 @@
-import { useCallback, useRef, useState } from "react";
+import React, { useCallback, useRef, useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { LayoutNode, PaneNode, PaneStatus } from "../types";
+import { LayoutNode, PaneStatus } from "../types";
 import { TerminalPane } from "./TerminalPane";
 
 interface SplitLayoutProps {
@@ -26,18 +26,15 @@ export function SplitLayout({
     return (
       <motion.div
         className="h-full w-full"
-        initial={{ opacity: 0, scale: 0.97 }}
+        initial={{ opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.97 }}
-        transition={{ duration: 0.25, ease: [0.25, 0.46, 0.45, 0.94] }}
+        transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
       >
         <TerminalPane
           pane={node}
           isActive={activePane === node.id}
           onFocus={() => onPaneActivate(node.id)}
-          onStatusChange={(status) =>
-            onPaneStatusChange?.(node.id, status)
-          }
+          onStatusChange={(status) => onPaneStatusChange?.(node.id, status)}
         />
       </motion.div>
     );
@@ -45,7 +42,7 @@ export function SplitLayout({
 
   return (
     <SplitContainer
-      node={node}
+      node={node as LayoutNode & { type: "horizontal" | "vertical" }}
       activePane={activePane}
       onPaneActivate={onPaneActivate}
       onPaneStatusChange={onPaneStatusChange}
@@ -83,9 +80,13 @@ function SplitContainer({
     startRatios: number[];
   } | null>(null);
 
+  // node.ratio が外部から変更された場合に同期
+  useEffect(() => {
+    setRatios(node.ratio);
+  }, [node.ratio]);
+
   const isHorizontal = node.type === "horizontal";
 
-  /** リサイズハンドルのドラッグ開始 */
   const handleMouseDown = useCallback(
     (index: number, e: React.MouseEvent) => {
       e.preventDefault();
@@ -101,34 +102,28 @@ function SplitContainer({
         if (!dragStartRef.current || !containerRef.current) return;
 
         const containerRect = containerRef.current.getBoundingClientRect();
-        const containerSize = isHorizontal
-          ? containerRect.width
-          : containerRect.height;
-
-        const currentPos = isHorizontal
-          ? moveEvent.clientX
-          : moveEvent.clientY;
-        const delta =
-          (currentPos - dragStartRef.current.startPos) / containerSize;
-
+        const containerSize = isHorizontal ? containerRect.width : containerRect.height;
+        const currentPos = isHorizontal ? moveEvent.clientX : moveEvent.clientY;
+        
+        const delta = (currentPos - dragStartRef.current.startPos) / containerSize;
         const newRatios = [...dragStartRef.current.startRatios];
-        const minRatio = 0.1; // 最小比率10%
+        const minRatio = 0.05;
 
-        const left = newRatios[dragStartRef.current.index] + delta;
-        const right = newRatios[dragStartRef.current.index + 1] - delta;
+        const left = Math.max(minRatio, newRatios[dragStartRef.current.index] + delta);
+        const right = Math.max(minRatio, newRatios[dragStartRef.current.index + 1] - delta);
 
-        if (left >= minRatio && right >= minRatio) {
-          newRatios[dragStartRef.current.index] = left;
-          newRatios[dragStartRef.current.index + 1] = right;
-          setRatios(newRatios);
-        }
+        // 合計を1に維持するための調整
+        const diff = (newRatios[dragStartRef.current.index] + newRatios[dragStartRef.current.index + 1]) - (left + right);
+        
+        newRatios[dragStartRef.current.index] = left;
+        newRatios[dragStartRef.current.index + 1] = right + diff;
+        
+        setRatios(newRatios);
+        onRatioChange?.(path, newRatios);
       };
 
       const handleMouseUp = () => {
-        if (dragStartRef.current) {
-          onRatioChange?.(path, ratios);
-          dragStartRef.current = null;
-        }
+        dragStartRef.current = null;
         window.removeEventListener("mousemove", handleMouseMove);
         window.removeEventListener("mouseup", handleMouseUp);
       };
@@ -136,7 +131,7 @@ function SplitContainer({
       window.addEventListener("mousemove", handleMouseMove);
       window.addEventListener("mouseup", handleMouseUp);
     },
-    [isHorizontal, ratios, onRatioChange]
+    [isHorizontal, ratios, onRatioChange, path]
   );
 
   return (
@@ -145,13 +140,12 @@ function SplitContainer({
       className={`flex h-full w-full ${isHorizontal ? "flex-row" : "flex-col"}`}
     >
       {node.children.map((child, index) => (
-        <React.Fragment key={getNodeKey(child)}>
-          {/* ペイン / サブスプリット */}
+        <React.Fragment key={child.id}>
           <div
             style={{
               [isHorizontal ? "width" : "height"]: `${ratios[index] * 100}%`,
-              minWidth: isHorizontal ? "60px" : undefined,
-              minHeight: !isHorizontal ? "40px" : undefined,
+              minWidth: isHorizontal ? "40px" : undefined,
+              minHeight: !isHorizontal ? "30px" : undefined,
             }}
             className="relative overflow-hidden"
           >
@@ -166,7 +160,6 @@ function SplitContainer({
             />
           </div>
 
-          {/* リサイズハンドル（最後の要素以外） */}
           {index < node.children.length - 1 && (
             <div
               className={`group relative flex-shrink-0 z-20 ${
@@ -176,16 +169,16 @@ function SplitContainer({
               }`}
               onMouseDown={(e) => handleMouseDown(index, e)}
             >
-              {/* 視覚的な細いライン */}
               <div
-                className={`absolute inset-0 transition-colors duration-200 group-hover:bg-accent-primary/50 ${
+                className={`absolute inset-0 transition-all duration-300 group-hover:bg-accent-primary/40 ${
                   isHorizontal
                     ? "left-1/2 w-[1px] -translate-x-1/2"
                     : "top-1/2 h-[1px] -translate-y-1/2"
                 }`}
                 style={{
-                  backgroundColor: "rgba(99, 102, 241, 0.15)",
-                  boxShadow: "0 0 8px var(--color-glow-active)",
+                  backgroundColor: "var(--color-border-active)",
+                  opacity: 0.1,
+                  boxShadow: "0 0 10px var(--color-glow-active)",
                 }}
               />
             </div>
@@ -194,11 +187,4 @@ function SplitContainer({
       ))}
     </div>
   );
-}
-
-import React from "react";
-
-/** ノードの一意キーを取得 */
-function getNodeKey(node: LayoutNode): string {
-  return node.id;
 }

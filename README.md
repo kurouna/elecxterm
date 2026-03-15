@@ -5,6 +5,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tauri](https://img.shields.io/badge/built%20with-Tauri-blue?logo=tauri)](https://tauri.app/)
+[![X](https://img.shields.io/badge/X-elecxzy-black)](https://x.com/elecxzy)
 
 **elecxterm** は、Tauri v2 と Rust で構築された、モダンでスタイリッシュな次世代ターミナルマネージャーです。  
 "elecxzy" エコシステムの一環として、直感的なタイリングレイアウト、高性能な PTY 管理、そして洗練されたユーザー体験を提供します。

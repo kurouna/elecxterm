@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { ptyBridge } from "../pty-bridge";
 import { PaneNode, PaneStatus } from "../types";
+import { useTheme } from "../ThemeContext";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalPaneProps {
@@ -13,17 +14,68 @@ interface TerminalPaneProps {
   onStatusChange?: (status: PaneStatus) => void;
 }
 
+const DARK_THEME = {
+  background: "#05070a",
+  foreground: "#e2e8f0",
+  cursor: "#818cf8",
+  cursorAccent: "#05070a",
+  selectionBackground: "rgba(129, 140, 248, 0.25)",
+  selectionForeground: "#ffffff",
+  black: "#0f172a",
+  red: "#f87171",
+  green: "#4ade80",
+  yellow: "#fbbf24",
+  blue: "#818cf8",
+  magenta: "#c084fc",
+  cyan: "#22d3ee",
+  white: "#f1f5f9",
+  brightBlack: "#475569",
+  brightRed: "#fca5a5",
+  brightGreen: "#86efac",
+  brightYellow: "#fde68a",
+  brightBlue: "#a5b4fc",
+  brightMagenta: "#d8b4fe",
+  brightCyan: "#67e8f9",
+  brightWhite: "#ffffff",
+};
+
+const LIGHT_THEME = {
+  background: "#ffffff",
+  foreground: "#1e293b",
+  cursor: "#3b82f6",
+  cursorAccent: "#ffffff",
+  selectionBackground: "rgba(59, 130, 246, 0.15)",
+  selectionForeground: "#1e293b",
+  black: "#f1f5f9",
+  red: "#ef4444",
+  green: "#10b981",
+  yellow: "#f59e0b",
+  blue: "#3b82f6",
+  magenta: "#8b5cf6",
+  cyan: "#06b6d4",
+  white: "#1e293b",
+  brightBlack: "#94a3b8",
+  brightRed: "#fca5a5",
+  brightGreen: "#34d399",
+  brightYellow: "#fbbf24",
+  brightBlue: "#60a5fa",
+  brightMagenta: "#a78bfa",
+  brightCyan: "#22d3ee",
+  brightWhite: "#000000",
+};
+
 export function TerminalPane({
   pane,
   isActive,
   onFocus,
   onStatusChange,
 }: TerminalPaneProps) {
+  const { resolvedTheme } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const [status, setStatus] = useState<PaneStatus>("running");
-  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const initializedRef = useRef(false);
 
   const updateStatus = useCallback(
     (newStatus: PaneStatus) => {
@@ -33,180 +85,139 @@ export function TerminalPane({
     [onStatusChange]
   );
 
+  // 1. 初回マウント時にTerminalを1回だけ作成する
   useEffect(() => {
     if (!containerRef.current) return;
 
     const terminal = new Terminal({
       fontFamily: '"JetBrains Mono", "Cascadia Code", "Fira Code", monospace',
       fontSize: 14,
-      lineHeight: 1.35,
+      lineHeight: 1.25,
+      fontWeight: "400",
       cursorBlink: true,
       cursorStyle: "bar",
       cursorWidth: 2,
       allowTransparency: true,
-      theme: {
-        background: "rgba(10, 14, 23, 0.85)",
-        foreground: "#e2e8f0",
-        cursor: "#6366f1",
-        cursorAccent: "#0a0e17",
-        selectionBackground: "rgba(99, 102, 241, 0.35)",
-        selectionForeground: "#f1f5f9",
-        black: "#1e293b",
-        red: "#f87171",
-        green: "#4ade80",
-        yellow: "#fbbf24",
-        blue: "#60a5fa",
-        magenta: "#c084fc",
-        cyan: "#22d3ee",
-        white: "#e2e8f0",
-        brightBlack: "#475569",
-        brightRed: "#fca5a5",
-        brightGreen: "#86efac",
-        brightYellow: "#fde68a",
-        brightBlue: "#93c5fd",
-        brightMagenta: "#d8b4fe",
-        brightCyan: "#67e8f9",
-        brightWhite: "#f8fafc",
-      },
+      drawBoldTextInBrightColors: true,
+      scrollback: 10000,
+      theme: resolvedTheme === "dark" ? DARK_THEME : LIGHT_THEME,
     });
 
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
-
     terminal.open(containerRef.current);
 
-    // WebGL アドオンの読み込み（フォールバック付き）
     try {
       const webglAddon = new WebglAddon();
-      webglAddon.onContextLoss(() => {
-        webglAddon.dispose();
-      });
+      webglAddon.onContextLoss(() => webglAddon.dispose());
       terminal.loadAddon(webglAddon);
     } catch (e) {
       console.warn("WebGL addon failed to load, using canvas renderer:", e);
     }
 
-    // 初回フィット
-    requestAnimationFrame(() => {
-      fitAddon.fit();
-    });
-
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
 
-    // PTYの作成と接続
     let unlistenData: (() => void) | null = null;
     let unlistenExit: (() => void) | null = null;
 
-    const initPty = async () => {
+    const setupTerminal = async () => {
       try {
-        const dims = fitAddon.proposeDimensions();
-
-        // 先にリスナーを登録する（IDは既知）
         unlistenData = await ptyBridge.onData(pane.id, (data) => {
           terminal.write(data);
         });
-
-        // PTY終了時の処理も先に登録
+        
         unlistenExit = await ptyBridge.onExit(pane.id, () => {
           updateStatus("exited");
           terminal.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
         });
 
-        // その後に PTY を作成
-        await ptyBridge.create({
-          id: pane.id,
-          cwd: pane.cwd,
-          shell: pane.shell,
-          rows: dims?.rows ?? 24,
-          cols: dims?.cols ?? 80,
-        });
+        if (!initializedRef.current) {
+          initializedRef.current = true;
+          const dims = fitAddon.proposeDimensions();
+          await ptyBridge.create({
+            id: pane.id,
+            cwd: pane.cwd,
+            shell: pane.shell,
+            rows: dims?.rows ?? 24,
+            cols: dims?.cols ?? 80,
+          });
+        }
+        updateStatus("running");
 
-        // ターミナルからの入力をPTYに送信
-        terminal.onData((data) => {
-          ptyBridge.write(pane.id, data);
-        });
+        terminal.onData((data) => ptyBridge.write(pane.id, data));
+        terminal.onResize(({ rows, cols }) => ptyBridge.resize(pane.id, rows, cols));
 
-        // ターミナルリサイズ時にPTYにも通知
-        terminal.onResize(({ rows, cols }) => {
-          ptyBridge.resize(pane.id, rows, cols);
+        requestAnimationFrame(() => {
+          fitAddon.fit();
+          if (isActive) terminal.focus();
         });
       } catch (e) {
-        console.error("Failed to initialize PTY:", e);
+        console.error("Terminal setup failed:", e);
         updateStatus("error");
-        terminal.write(
-          `\r\n\x1b[31m[Failed to start terminal: ${e}]\x1b[0m\r\n`
-        );
       }
     };
 
-    initPty();
+    setupTerminal();
 
-    // ResizeObserverでコンテナサイズの変更を検知
     const observer = new ResizeObserver(() => {
-      requestAnimationFrame(() => {
-        if (fitAddonRef.current) {
-          try {
-            fitAddonRef.current.fit();
-          } catch {
-            // フィット失敗は無視
-          }
-        }
-      });
+      try { fitAddon.fit(); } catch {}
     });
     observer.observe(containerRef.current);
-    resizeObserverRef.current = observer;
 
     return () => {
       observer.disconnect();
       unlistenData?.();
       unlistenExit?.();
-      ptyBridge.destroy(pane.id).catch(() => {});
       terminal.dispose();
+      terminalRef.current = null;
     };
-  }, [pane.id]);
+  }, [pane.id]); // resolvedThemeを依存配列から外し、再作成を防ぐ
 
-  // アクティブ状態が変わったらフォーカスを移動
+  // 2. テーマが変更された時、オプションのみを更新する
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.options.theme = resolvedTheme === "dark" ? DARK_THEME : LIGHT_THEME;
+      // 再描画を促す
+      terminalRef.current.refresh(0, terminalRef.current.rows - 1);
+    }
+  }, [resolvedTheme]);
+
+  // 3. アクティブ状態のフォーカス管理
   useEffect(() => {
     if (isActive && terminalRef.current) {
       terminalRef.current.focus();
     }
   }, [isActive]);
 
-  // ステータスに応じたボーダーカラー
-  const borderClass =
-    status === "error"
-      ? "glow-error"
-      : isActive
-        ? "glow-active border-accent-primary/50 shadow-[0_0_15px_rgba(99,102,241,0.2)]"
-        : "border-border-default/20";
+  const borderStyle = status === "error" 
+    ? "border-[var(--color-border-error)] shadow-[0_0_8px_var(--color-glow-error)]"
+    : isActive 
+      ? "border-[var(--color-border-active)] shadow-[0_0_10px_var(--color-glow-active)]"
+      : "border-[var(--color-border-default)]";
 
   return (
     <div
-      className={`relative h-full w-full overflow-hidden rounded-md transition-all duration-300 border ${borderClass}`}
+      className={`relative h-full w-full overflow-hidden rounded-md border ${borderStyle}`}
       onClick={onFocus}
       style={{
         backgroundColor: isActive 
-          ? "rgba(10, 14, 23, 0.9)" 
-          : "rgba(10, 14, 23, 0.8)",
+          ? "var(--color-surface-secondary)" 
+          : "var(--color-surface-primary)",
       }}
     >
-      {/* フォーカス時のオーバーレイ光彩 */}
-      {isActive && (
-        <div className="absolute inset-0 pointer-events-none bg-gradient-to-tr from-accent-primary/5 to-transparent opacity-30" />
-      )}
-
-      {/* ステータスインジケーター */}
-      <div className="absolute top-1.5 right-2 z-10 flex items-center gap-1.5">
+      <div className="absolute top-1 right-2 z-10 flex items-center gap-2 px-2 py-0.5 rounded-full bg-surface-primary/40 backdrop-blur-md border border-white/5">
         <div
-          className={`h-1.5 w-1.5 rounded-full transition-all duration-500 ${
-            isActive && status === "running"
-              ? "bg-accent-emerald shadow-[0_0_8px_#34d399]"
-              : "bg-text-muted opacity-30"
+          className={`h-1.5 w-1.5 rounded-full ${
+            status === "running"
+              ? isActive 
+                ? "bg-[#4ade80] shadow-[0_0_8px_#4ade80] animate-pulse" 
+                : "bg-[#4ade80]/30"
+              : "bg-[#ef4444] shadow-[0_0_8px_#ef4444]"
           }`}
         />
-        {isActive && (
-          <span className="text-[10px] font-medium text-accent-primary/60 uppercase tracking-tighter">
+        {isActive && status === "running" && (
+          <span className="text-[9px] font-bold text-[#4ade80]/90 uppercase tracking-widest">
             Active
           </span>
         )}
@@ -214,8 +225,8 @@ export function TerminalPane({
 
       <div
         ref={containerRef}
-        className="h-full w-full"
-        style={{ background: "rgba(10, 14, 23, 0.85)" }}
+        className="h-full w-full pt-6"
+        style={{ background: "transparent" }}
       />
     </div>
   );

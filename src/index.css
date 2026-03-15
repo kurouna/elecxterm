@@ -1,32 +1,73 @@
 @import "tailwindcss";
 
-/* ===== elecxterm Design System ===== */
-
 @theme {
-  --color-surface-primary: #05070a;
-  --color-surface-secondary: #0d1117;
-  --color-surface-elevated: #161b22;
-  --color-surface-glass: rgba(13, 17, 23, 0.6);
+  --color-surface-primary: var(--color-surface-primary);
+  --color-surface-secondary: var(--color-surface-secondary);
+  --color-surface-elevated: var(--color-surface-elevated);
+  --color-surface-glass: var(--color-surface-glass);
+  
+  --color-border-default: var(--color-border-default);
+  --color-border-active: var(--color-border-active);
+  --color-border-error: var(--color-border-error);
+  
+  --color-accent-primary: var(--color-accent-primary);
+  --color-accent-secondary: var(--color-accent-secondary);
+  --color-accent-cyan: var(--color-accent-cyan);
+  --color-accent-emerald: var(--color-accent-emerald);
+  
+  --color-text-primary: var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-muted: var(--color-text-muted);
+}
 
-  --color-border-default: rgba(99, 102, 241, 0.1);
-  --color-border-active: rgba(99, 102, 241, 0.4);
-  --color-border-error: rgba(239, 68, 68, 0.5);
+/* Base & Default Theme: Midnight (Dark) */
+:root,
+html[data-theme='dark'] {
+  --color-surface-primary: #05070a;
+  --color-surface-secondary: #0f172a;
+  --color-surface-elevated: #161b22;
+  --color-surface-glass: rgba(10, 14, 23, 0.75);
+
+  --color-border-default: #1e293b;
+  --color-border-active: #818cf8;
+  --color-border-error: #f87171;
 
   --color-accent-primary: #818cf8;
-  --color-accent-secondary: #a78bfa;
-  --color-accent-cyan: #67e8f9;
-  --color-accent-emerald: #34d399;
+  --color-accent-secondary: #c084fc;
+  --color-accent-cyan: #22d3ee;
+  --color-accent-emerald: #10b981;
 
-  --color-text-primary: #e2e8f0;
-  --color-text-secondary: #94a3b8;
-  --color-text-muted: #475569;
+  --color-text-primary: #f8fafc;
+  --color-text-secondary: #e2e8f0;
+  --color-text-muted: #94a3b8;
 
-  --color-glow-active: rgba(99, 102, 241, 0.15);
-  --color-glow-error: rgba(239, 68, 68, 0.15);
-  --color-glow-success: rgba(52, 211, 153, 0.15);
+  --color-glow-active: rgba(129, 140, 248, 0.2);
+  --color-glow-error: rgba(248, 113, 113, 0.15);
 
-  --font-mono: "JetBrains Mono", "Cascadia Code", "Fira Code", monospace;
-  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  --font-sans: "Noto Sans JP", "Inter", system-ui, -apple-system, sans-serif;
+}
+
+/* Light Theme: Daylight */
+html[data-theme='light'] {
+  --color-surface-primary: #ffffff;
+  --color-surface-secondary: #f8fafc;
+  --color-surface-elevated: #f1f5f9;
+  --color-surface-glass: rgba(255, 255, 255, 0.96);
+
+  --color-border-default: #e5e7eb;
+  --color-border-active: #3b82f6;
+
+  --color-accent-primary: #2563eb;
+  --color-accent-secondary: #4f46e5;
+  --color-accent-cyan: #0284c7;
+
+  --color-text-primary: #020617;
+  --color-text-secondary: #1e293b;
+  --color-text-muted: #64748b;
+
+  --color-glow-active: rgba(37, 99, 235, 0.1);
+  --color-glow-error: rgba(220, 38, 38, 0.1);
 }
 
 /* ===== Base Reset ===== */
@@ -36,126 +77,50 @@
   box-sizing: border-box;
 }
 
-html,
-body,
-#root {
+/* Windowsでの文字のにじみ・薄さ対策 */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+html, body, #root {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  background: transparent;
+  background-color: var(--color-surface-primary);
   font-family: var(--font-sans);
   color: var(--color-text-primary);
 }
 
-body {
-  background: var(--color-surface-primary);
+/* ===== xterm.js Theme Sync ===== */
+.xterm,
+.xterm:focus {
+  padding: 8px;
+  background-color: transparent !important;
+  outline: none !important;
 }
 
-/* ===== Scrollbar ===== */
+/* ===== Scrollbars (Force Hidden) ===== */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  display: none !important;
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
+* {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
 }
 
-::-webkit-scrollbar-thumb {
-  background: rgba(99, 102, 241, 0.3);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(99, 102, 241, 0.5);
-}
-
-/* ===== Selection ===== */
-::selection {
-  background: rgba(99, 102, 241, 0.35);
-  color: var(--color-text-primary);
-}
-
-/* ===== xterm.js overrides ===== */
-.xterm {
-  padding: 4px 8px;
-}
-
-.xterm-viewport::-webkit-scrollbar {
-  width: 6px;
-}
-
-.xterm-viewport::-webkit-scrollbar-thumb {
-  background: rgba(99, 102, 241, 0.3);
-  border-radius: 3px;
-}
-
-/* ===== Glassmorphism utility ===== */
+/* ===== Utilities ===== */
 .glass {
   background: var(--color-surface-glass);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(24px);
 }
 
-/* ===== Glow animation ===== */
-@keyframes glow-pulse {
-  0%,
-  100% {
-    opacity: 0.4;
-  }
-  50% {
-    opacity: 0.8;
-  }
-}
-
-.glow-active {
-  box-shadow: 0 0 12px var(--color-glow-active), inset 0 0 12px var(--color-glow-active);
-}
-
-.glow-error {
-  box-shadow: 0 0 12px var(--color-glow-error), inset 0 0 12px var(--color-glow-error);
-  animation: glow-pulse 2s ease-in-out infinite;
-}
-
-/* ===== Title bar drag region ===== */
 .titlebar-drag {
   -webkit-app-region: drag;
-  app-region: drag;
 }
 
 .titlebar-no-drag {
   -webkit-app-region: no-drag;
-  app-region: no-drag;
-}
-
-/* ===== Pane resize handle ===== */
-.resize-handle {
-  position: relative;
-  z-index: 10;
-  transition: background-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.resize-handle:hover {
-  background-color: var(--color-accent-primary);
-  box-shadow: 0 0 8px var(--color-glow-active);
-}
-
-.resize-handle-horizontal {
-  width: 2px;
-  cursor: col-resize;
-  min-width: 2px;
-}
-
-.resize-handle-vertical {
-  height: 2px;
-  cursor: row-resize;
-  min-height: 2px;
-}
-
-/* ===== Utilities ===== */
-.no-scrollbar {
-  scrollbar-width: none;
-}
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
 }

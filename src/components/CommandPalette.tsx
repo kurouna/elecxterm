@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Search, ChevronRight, CornerDownLeft, X } from "lucide-react";
 import { CommandItem } from "../types";
 
 interface CommandPaletteProps {
@@ -16,155 +17,121 @@ export function CommandPalette({
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  // フィルタリング（あいまい検索）
   const filteredCommands = useMemo(() => {
-    if (!query) return commands;
-    const lowerQuery = query.toLowerCase();
+    const q = query.toLowerCase().trim();
+    if (!q) return commands;
     return commands.filter(
       (cmd) =>
-        cmd.label.toLowerCase().includes(lowerQuery) ||
-        cmd.description?.toLowerCase().includes(lowerQuery) ||
-        cmd.category?.toLowerCase().includes(lowerQuery)
+        cmd.label.toLowerCase().includes(q) ||
+        cmd.category?.toLowerCase().includes(q)
     );
   }, [commands, query]);
 
-  // オープン時にフォーカスとリセット
   useEffect(() => {
     if (isOpen) {
       setQuery("");
       setSelectedIndex(0);
-      requestAnimationFrame(() => {
-        inputRef.current?.focus();
-      });
+      const timer = setTimeout(() => inputRef.current?.focus(), 100);
+      return () => clearTimeout(timer);
     }
   }, [isOpen]);
 
-  // 選択インデックスの正規化
   useEffect(() => {
-    if (selectedIndex >= filteredCommands.length) {
-      setSelectedIndex(Math.max(0, filteredCommands.length - 1));
-    }
-  }, [filteredCommands.length, selectedIndex]);
-
-  // 選択中のアイテムをスクロール表示
-  useEffect(() => {
-    if (listRef.current) {
-      const selected = listRef.current.children[selectedIndex] as HTMLElement;
-      selected?.scrollIntoView({ block: "nearest" });
-    }
-  }, [selectedIndex]);
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    switch (e.key) {
-      case "ArrowDown":
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(e.key)) {
+        e.stopPropagation();
+      }
+      if (e.key === "ArrowDown") {
         e.preventDefault();
-        setSelectedIndex((prev) =>
-          Math.min(prev + 1, filteredCommands.length - 1)
-        );
-        break;
-      case "ArrowUp":
+        setSelectedIndex((prev) => (filteredCommands.length > 0 ? (prev + 1) % filteredCommands.length : 0));
+      } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        setSelectedIndex((prev) => Math.max(prev - 1, 0));
-        break;
-      case "Enter":
+        setSelectedIndex((prev) => (filteredCommands.length > 0 ? (prev - 1 + filteredCommands.length) % filteredCommands.length : 0));
+      } else if (e.key === "Enter") {
         e.preventDefault();
-        if (filteredCommands[selectedIndex]) {
-          filteredCommands[selectedIndex].action();
+        const cmd = filteredCommands[selectedIndex];
+        if (cmd) {
+          cmd.action();
           onClose();
         }
-        break;
-      case "Escape":
+      } else if (e.key === "Escape") {
         e.preventDefault();
         onClose();
-        break;
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [isOpen, filteredCommands, selectedIndex, onClose]);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      const activeEl = scrollRef.current.children[selectedIndex] as HTMLElement;
+      if (activeEl) activeEl.scrollIntoView({ block: "nearest", behavior: "auto" });
     }
-  };
+  }, [selectedIndex]);
 
   return (
     <AnimatePresence>
       {isOpen && (
-        <>
-          {/* オーバーレイ */}
+        <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[12vh]">
+          {/* Backdrop */}
           <motion.div
-            className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/50 backdrop-blur-[2px]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
             onClick={onClose}
           />
 
-          {/* パレット本体 */}
+          {/* Dialog Container (VSCode-like size & style) */}
           <motion.div
-            className="fixed top-[15%] left-1/2 z-50 w-full max-w-xl -translate-x-1/2"
-            initial={{ opacity: 0, y: -20, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -10, scale: 0.98 }}
-            transition={{
-              duration: 0.2,
-              ease: [0.25, 0.46, 0.45, 0.94],
-            }}
+            className="relative w-[90%] max-w-[560px] overflow-hidden rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#0c1117] shadow-2xl"
+            initial={{ opacity: 0, scale: 0.99, y: -10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.99, y: -5 }}
+            transition={{ type: "spring", damping: 25, stiffness: 350 }}
           >
-            <div className="glass overflow-hidden rounded-xl border border-border-default shadow-2xl shadow-accent-primary/10">
-              {/* 検索入力 */}
-              <div className="flex items-center gap-3 border-b border-border-default px-4 py-3">
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  className="flex-shrink-0 text-text-muted"
-                >
-                  <circle
-                    cx="11"
-                    cy="11"
-                    r="7"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  />
-                  <path
-                    d="M16 16L21 21"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                  />
-                </svg>
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={query}
-                  onChange={(e) => {
-                    setQuery(e.target.value);
-                    setSelectedIndex(0);
-                  }}
-                  onKeyDown={handleKeyDown}
-                  placeholder="コマンドを検索..."
-                  className="flex-1 bg-transparent text-sm text-text-primary placeholder-text-muted outline-none"
-                />
-                <kbd className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-medium text-text-muted">
-                  ESC
-                </kbd>
-              </div>
-
-              {/* コマンド一覧 */}
-              <div
-                ref={listRef}
-                className="max-h-72 overflow-y-auto py-1"
+            {/* Search Area */}
+            <div className="flex items-center gap-3 border-b border-black/[0.05] dark:border-white/5 px-4 py-2.5">
+              <Search size={18} className="text-accent-primary opacity-70" strokeWidth={2} />
+              <input
+                ref={inputRef}
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="コマンドを検索..."
+                className="flex-1 bg-transparent text-[14px] font-medium text-text-primary outline-none placeholder:text-text-muted/40"
+              />
+              <button 
+                onClick={onClose}
+                className="text-text-muted hover:text-text-primary transition-colors"
               >
-                {filteredCommands.length === 0 ? (
-                  <div className="px-4 py-6 text-center text-sm text-text-muted">
-                    一致するコマンドが見つかりません
-                  </div>
-                ) : (
-                  filteredCommands.map((cmd, index) => (
-                    <button
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* List Area */}
+            <div
+              ref={scrollRef}
+              className="max-h-[360px] overflow-y-auto p-1 no-scrollbar"
+            >
+              {filteredCommands.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-text-muted/40">
+                  <p className="text-xs font-medium">結果が見つかりません</p>
+                </div>
+              ) : (
+                filteredCommands.map((cmd, index) => {
+                  const isActive = index === selectedIndex;
+                  return (
+                    <div
                       key={cmd.id}
-                      className={`flex w-full items-center justify-between px-4 py-2.5 text-left transition-colors duration-75 ${
-                        index === selectedIndex
-                          ? "bg-accent-primary/15 text-text-primary"
-                          : "text-text-secondary hover:bg-white/[0.04]"
+                      className={`group flex cursor-pointer items-center justify-between rounded-md px-3 py-1.5 transition-all duration-75 ${
+                        isActive 
+                          ? "bg-accent-primary text-white" 
+                          : "text-text-secondary hover:bg-black/[0.04] dark:hover:bg-white/5"
                       }`}
                       onClick={() => {
                         cmd.action();
@@ -172,40 +139,54 @@ export function CommandPalette({
                       }}
                       onMouseEnter={() => setSelectedIndex(index)}
                     >
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-sm font-medium">
-                          {cmd.label}
-                        </span>
-                        {cmd.description && (
-                          <span className="text-xs text-text-muted">
-                            {cmd.description}
+                      <div className="flex items-center gap-3">
+                        <ChevronRight 
+                          size={14} 
+                          className={`transition-colors ${isActive ? "text-white" : "text-text-muted/50"}`} 
+                          strokeWidth={2}
+                        />
+                        <div className="flex flex-col">
+                          <span className="text-[13px] font-medium tracking-tight">
+                            {cmd.label}
                           </span>
-                        )}
+                          {cmd.category && !isActive && (
+                            <span className="text-[9px] uppercase tracking-wider opacity-50">
+                              {cmd.category}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      {cmd.shortcut && (
-                        <kbd className="ml-4 flex-shrink-0 rounded bg-white/[0.06] px-2 py-0.5 text-[11px] font-medium text-text-muted">
-                          {cmd.shortcut}
-                        </kbd>
-                      )}
-                    </button>
-                  ))
-                )}
-              </div>
 
-              {/* フッター */}
-              <div className="flex items-center gap-4 border-t border-border-default px-4 py-2">
-                <div className="flex items-center gap-1.5 text-[10px] text-text-muted">
-                  <kbd className="rounded bg-white/[0.06] px-1 py-0.5">↑↓</kbd>
-                  <span>移動</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-[10px] text-text-muted">
-                  <kbd className="rounded bg-white/[0.06] px-1 py-0.5">Enter</kbd>
-                  <span>実行</span>
-                </div>
+                      {cmd.shortcut && (
+                        <div className={`text-[10px] ml-4 font-mono opacity-80 ${isActive ? "text-white" : "text-text-muted"}`}>
+                          {cmd.shortcut}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-center gap-6 border-t border-black/[0.05] dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.02] px-4 py-2">
+              <div className="flex items-center gap-1.5 grayscale opacity-50">
+                <kbd className="text-[10px] font-mono border border-black/10 dark:border-white/10 px-1 rounded">↑↓</kbd>
+                <span className="text-[9px] uppercase tracking-widest font-medium">Move</span>
+              </div>
+              <div className="flex items-center gap-1.5 grayscale opacity-50">
+                <kbd className="text-[10px] font-mono border border-black/10 dark:border-white/10 px-1 rounded">
+                  <CornerDownLeft size={8} />
+                </kbd>
+                <span className="text-[9px] uppercase tracking-widest font-medium">Select</span>
+              </div>
+              <div className="flex items-center gap-1.5 grayscale opacity-50">
+                <kbd className="text-[10px] font-mono border border-black/10 dark:border-white/10 px-1 rounded">Esc</kbd>
+                <span className="text-[9px] uppercase tracking-widest font-medium">Close</span>
               </div>
             </div>
           </motion.div>
-        </>
+        </div>
       )}
     </AnimatePresence>
   );
