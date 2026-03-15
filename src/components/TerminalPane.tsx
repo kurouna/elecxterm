@@ -42,27 +42,27 @@ const DARK_THEME = {
 
 const LIGHT_THEME = {
   background: "#ffffff",
-  foreground: "#000000",
+  foreground: "#1e293b", // 少し和らげた黒
   cursor: "#2563eb",
   cursorAccent: "#ffffff",
-  selectionBackground: "rgba(37, 99, 235, 0.2)",
-  selectionForeground: "#000000",
-  black: "#000000",
-  red: "#dc2626",
-  green: "#16a34a",
-  yellow: "#ca8a04",
-  blue: "#2563eb",
-  magenta: "#9333ea",
-  cyan: "#0891b2",
-  white: "#f8fafc",
+  selectionBackground: "rgba(37, 99, 235, 0.15)",
+  selectionForeground: "#1e293b",
+  black: "#0f172a",
+  red: "#be123c",      // 少し暗めの赤
+  green: "#15803d",    // 少し暗めの緑
+  yellow: "#a16207",   // 少し暗めの黄色
+  blue: "#1d4ed8",     // 少し暗めの青
+  magenta: "#7e22ce",  // 少し暗めのマゼンタ
+  cyan: "#0e7490",     // 少し暗めのシアン
+  white: "#475569",    // 重要な修正: 以前は白すぎて見えなかった。ディレクトリ表示などに使われる。
   brightBlack: "#64748b",
-  brightRed: "#ef4444",
-  brightGreen: "#22c55e",
-  brightYellow: "#eab308",
-  brightBlue: "#3b82f6",
-  brightMagenta: "#a855f7",
-  brightCyan: "#06b6d4",
-  brightWhite: "#000000",
+  brightRed: "#e11d48",
+  brightGreen: "#16a34a",
+  brightYellow: "#ca8a04",
+  brightBlue: "#2563eb",
+  brightMagenta: "#9333ea",
+  brightCyan: "#0891b2",
+  brightWhite: "#0f172a", // 常に暗い色にする
 };
 
 export function TerminalPane({
