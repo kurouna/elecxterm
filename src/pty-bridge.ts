@@ -16,19 +16,11 @@ export const ptyBridge = {
 
   /** PTYに入力を書き込む（Base64エンコード済み） */
   async write(id: string, data: string): Promise<void> {
-    // 文字列をBase64にエンコード
-    const encoded = btoa(
-      Array.from(new TextEncoder().encode(data))
-        .map((b) => String.fromCharCode(b))
-        .join("")
-    );
-    await invoke("write_pty", { id, data: encoded });
+    // 文字列をUint8Arrayとして取得し、そのままTauri側に送信
+    const bytes = new TextEncoder().encode(data);
+    await invoke("write_pty", { id, data: bytes });
   },
 
-  /** PTYに生バイトを書き込む（既にBase64エンコードされたデータ） */
-  async writeRaw(id: string, base64Data: string): Promise<void> {
-    await invoke("write_pty", { id, data: base64Data });
-  },
 
   /** PTYのサイズを変更 */
   async resize(id: string, rows: number, cols: number): Promise<void> {

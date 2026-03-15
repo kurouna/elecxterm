@@ -154,18 +154,19 @@ export function TerminalPane({
         unlistenPtyData = await ptyBridge.onData(pane.id, (data) => {
           terminal.write(data);
 
-          // OSC 7 (Directory Change) シーケンスの簡易チェック
-          // \x1b]7;file://HOSTNAME/PATH\x1b\\
-          const text = new TextDecoder().decode(data);
-          if (text.includes("\x1b]7;")) {
-            const match = text.match(/\x1b]7;file:\/\/[^\/]+(\/[^\x1b\x07]+)/);
-            if (match && match[1]) {
-              let path = match[1];
-              // Windowsパスの補正 (/C:/... -> C:/...)
-              if (path.startsWith("/") && path.match(/^\/[a-zA-Z]:/)) {
-                path = path.substring(1);
+          // OSC 7 (Directory Change) シーケンスのチェック
+          // パフォーマンスのため、エスケープ文字(0x1b)が含まれている場合のみデコードを試みる
+          if (data.includes(0x1b)) {
+            const text = new TextDecoder().decode(data);
+            if (text.includes("\x1b]7;")) {
+              const match = text.match(/\x1b]7;file:\/\/[^\/]+(\/[^\x1b\x07]+)/);
+              if (match && match[1]) {
+                let path = match[1];
+                if (path.startsWith("/") && path.match(/^\/[a-zA-Z]:/)) {
+                  path = path.substring(1);
+                }
+                onCwdChange?.(path);
               }
-              onCwdChange?.(path);
             }
           }
         });
