@@ -4,10 +4,20 @@ import { load } from "@tauri-apps/plugin-store";
 import { ptyBridge } from "../pty-bridge";
 
 const STORE_PATH = "elecxterm-settings.json";
+export const MAX_PANES = 15;
 
 // シンプルなID生成
 function generateId(): string {
   return `id-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
+/** 全ペインの総数を計算する */
+function countAllPanes(tabs: Tab[]): number {
+  const countInNode = (node: LayoutNode): number => {
+    if (node.type === "pane") return 1;
+    return node.children.reduce((acc, child) => acc + countInNode(child), 0);
+  };
+  return tabs.reduce((acc, tab) => acc + countInNode(tab.layout), 0);
 }
 
 /** 最初のペインを見つける (Hoisted) */
@@ -43,22 +53,28 @@ export function useLayout() {
   const activePane = activeTab?.activePaneId || "";
 
   /** デフォルトのレイアウト（単一ペイン） */
-  function createDefaultLayout(cwd?: string): LayoutNode {
+  function createDefaultLayout(cwd?: string, shell?: string): LayoutNode {
     return {
       type: "pane",
       id: generateId(),
-      shell: "cmd.exe",
+      shell: shell || "cmd.exe",
       cwd: cwd,
     };
   }
 
   /** 新しいタブを作成 */
-  const addTab = useCallback((name?: string, cwd?: string) => {
+  const addTab = useCallback((name?: string, shell?: string, cwd?: string) => {
+    // 全体のペイン数制限チェック
+    if (countAllPanes(tabs) >= MAX_PANES) {
+      alert(`ペインの最大数 (${MAX_PANES}) に達しました。`);
+      return;
+    }
+
     const finalCwd = cwd || appDefaultCwd;
     const newTab: Tab = {
       id: generateId(),
       name: name || `Tab ${tabs.length + 1}`,
-      layout: createDefaultLayout(finalCwd),
+      layout: createDefaultLayout(finalCwd, shell),
       activePaneId: "",
       defaultCwd: finalCwd,
     };
@@ -68,7 +84,7 @@ export function useLayout() {
 
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(newTab.id);
-  }, [tabs.length, appDefaultCwd]);
+  }, [tabs.length, appDefaultCwd, tabs]);
 
   const closeTab = useCallback((id: string) => {
     // 1. PTY cleanup
@@ -182,6 +198,12 @@ export function useLayout() {
       direction: "horizontal" | "vertical",
       newPaneOptions?: Partial<PaneNode>
     ) => {
+      // 全体のペイン数制限チェック
+      if (countAllPanes(tabs) >= MAX_PANES) {
+        alert(`ペインの最大数 (${MAX_PANES}) に達しました。`);
+        return ""; // 分割失敗を示すために空文字列を返すか、エラーをスロー
+      }
+
       const newPaneId = generateId();
 
       setTabs((prev) => prev.map(tab => {
@@ -202,7 +224,7 @@ export function useLayout() {
 
       return newPaneId;
     },
-    [activeTabId]
+    [activeTabId, tabs]
   );
 
   /** ペインを閉じる */
