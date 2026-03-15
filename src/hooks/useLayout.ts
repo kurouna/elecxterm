@@ -78,42 +78,34 @@ export function useLayout() {
       paneIds.forEach(pid => ptyBridge.destroy(pid).catch(() => {}));
     }
 
-    // 2. Calculate next active tab before filtering
-    let nextActiveId: string | null = null;
+    const filtered = tabs.filter((t) => t.id !== id);
+    
+    // 全てのタブが閉じられた場合、新しいタブを作成してアクティブにする
+    if (filtered.length === 0) {
+      const newTab: Tab = {
+        id: generateId(),
+        name: "Tab 1",
+        layout: createDefaultLayout(appDefaultCwd),
+        activePaneId: "",
+        defaultCwd: appDefaultCwd,
+      };
+      const first = findFirstPane(newTab.layout);
+      if (first) newTab.activePaneId = first.id;
+      
+      setTabs([newTab]);
+      setActiveTabId(newTab.id);
+      return;
+    }
+    
+    // 閉じられたタブがアクティブだった場合、別のタブをアクティブにする
     if (activeTabId === id) {
       const index = tabs.findIndex(t => t.id === id);
-      const filtered = tabs.filter(t => t.id !== id);
-      if (filtered.length > 0) {
-        // Select the tab before the closed one (or the first one if the closed one was first)
-        const nextIndex = Math.max(0, index - 1);
-        nextActiveId = filtered[nextIndex].id;
-      }
+      const nextIndex = Math.max(0, index - 1);
+      const nextId = filtered[nextIndex].id;
+      setActiveTabId(nextId);
     }
-
-    // 3. Update tabs list
-    setTabs((prev) => {
-      const filtered = prev.filter((t) => t.id !== id);
-      
-      if (filtered.length === 0) {
-        const newTab: Tab = {
-          id: generateId(),
-          name: "Tab 1",
-          layout: createDefaultLayout(appDefaultCwd),
-          activePaneId: "",
-          defaultCwd: appDefaultCwd,
-        };
-        const first = findFirstPane(newTab.layout);
-        if (first) newTab.activePaneId = first.id;
-        setActiveTabId(newTab.id);
-        return [newTab];
-      }
-      
-      if (nextActiveId) {
-        setActiveTabId(nextActiveId);
-      }
-      
-      return filtered;
-    });
+    
+    setTabs(filtered);
   }, [tabs, activeTabId, setActiveTabId, getAllPaneIds, appDefaultCwd]);
 
   // セッションの読み込み
@@ -219,9 +211,19 @@ export function useLayout() {
       // PTY を明示的に破棄
       ptyBridge.destroy(paneId).catch(() => {});
 
+      const tab = tabs.find(t => t.id === activeTabId);
+      if (tab) {
+        const paneIds = getAllPaneIds(tab.layout);
+        // このペインがタブ内で最後の一つなら、タブごと閉じる
+        if (paneIds.length === 1 && paneIds[0] === paneId) {
+          closeTab(activeTabId);
+          return;
+        }
+      }
+
       setTabs((prev) => prev.map(tab => {
         if (tab.id !== activeTabId) return tab;
-        const newLayout = removePaneFromTree(tab.layout, paneId) || createDefaultLayout();
+        const newLayout = removePaneFromTree(tab.layout, paneId) || createDefaultLayout(appDefaultCwd);
         let newActiveId = tab.activePaneId;
         if (newActiveId === paneId) {
           newActiveId = findFirstPane(newLayout)?.id || "";
@@ -233,7 +235,7 @@ export function useLayout() {
         };
       }));
     },
-    [activeTabId]
+    [tabs, activeTabId, closeTab, getAllPaneIds, appDefaultCwd]
   );
 
   /** 分割比率を更新する */

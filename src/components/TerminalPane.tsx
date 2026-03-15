@@ -94,7 +94,7 @@ export function TerminalPane({
     const terminal = new Terminal({
       fontFamily: '"Cascadia Mono", "JetBrains Mono", "Noto Sans JP", "BIZ UDGothic", "Meiryo", "Yu Gothic", Consolas, monospace',
       fontSize: 14,
-      lineHeight: 1.5,
+      lineHeight: 1.2,
       fontWeight: '500', // 物理的に線を太くしてかすれを解消
       fontWeightBold: 'bold',
       cursorBlink: true,
@@ -132,7 +132,7 @@ export function TerminalPane({
         // キーボード入力をPTYに送信
         dataDisposable = terminal.onData((data) => {
           ptyBridge.write(pane.id, data);
-          
+
           // Enterキーなどが押された際にディレクトリを確認（遅延実行）
           if (data.includes("\r") || data.includes("\n")) {
             setTimeout(async () => {
@@ -151,7 +151,7 @@ export function TerminalPane({
         // PTYからの出力をターミナルに表示
         unlistenPtyData = await ptyBridge.onData(pane.id, (data) => {
           terminal.write(data);
-          
+
           // OSC 7 (Directory Change) シーケンスの簡易チェック
           // \x1b]7;file://HOSTNAME/PATH\x1b\\
           const text = new TextDecoder().decode(data);
@@ -244,9 +244,8 @@ export function TerminalPane({
       }}
     >
       {/* Status Badge */}
-      <div className={`absolute top-1 right-2 z-10 flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-tx-primary/5 transition-all ${
-        isActive && status === "running" ? "bg-bg-main/80 shadow-sm backdrop-blur-md" : "bg-bg-main/20 backdrop-blur-sm"
-      }`}>
+      <div className={`absolute top-1 right-2 z-10 flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-tx-primary/5 transition-all ${isActive && status === "running" ? "bg-bg-main/80 shadow-sm backdrop-blur-md" : "bg-bg-main/20 backdrop-blur-sm"
+        }`}>
         <div
           className={`h-1.5 w-1.5 rounded-full ${status === "running"
             ? "bg-[#22c55e]"
