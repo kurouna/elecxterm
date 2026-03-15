@@ -17,9 +17,17 @@ interface KeybindOptions {
 export function useKeybinds(options: KeybindOptions) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Block default browser reload behavior (Ctrl+R, F5)
-      if ((e.ctrlKey && e.key.toLowerCase() === "r") || e.key === "F5") {
+      // Block default browser behavior that interferes with terminal or app usage
+      const isCtrl = e.ctrlKey;
+      const key = e.key.toLowerCase();
+      
+      // Browser shortcuts to block
+      if (
+        (isCtrl && (key === "r" || key === "p" || key === "f" || key === "g" || key === "s" || key === "j" || key === "h" || key === "o" || key === "n")) ||
+        e.key === "F5"
+      ) {
         e.preventDefault();
+        // Do NOT stopPropagation here so the terminal can still receive the event
       }
 
       if (!e.ctrlKey) return;
