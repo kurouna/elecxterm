@@ -12,6 +12,7 @@ interface TerminalPaneProps {
   isActive: boolean;
   onFocus: () => void;
   onStatusChange?: (status: PaneStatus) => void;
+  onCwdChange?: (cwd: string) => void;
 }
 
 const DARK_THEME = {
@@ -69,6 +70,7 @@ export function TerminalPane({
   isActive,
   onFocus,
   onStatusChange,
+  onCwdChange,
 }: TerminalPaneProps) {
   const { resolvedTheme } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -121,12 +123,51 @@ export function TerminalPane({
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
 
-    let unlistenData: (() => void) | null = null;
+    let unlistenPtyData: (() => void) | null = null;
     let unlistenExit: (() => void) | null = null;
+    let dataDisposable: { dispose(): void; } | null = null;
 
     const setupTerminal = async () => {
       try {
-        unlistenData = await ptyBridge.onData(pane.id, (data) => terminal.write(data));
+        // キーボード入力をPTYに送信
+        dataDisposable = terminal.onData((data) => {
+          ptyBridge.write(pane.id, data);
+          
+          // Enterキーなどが押された際にディレクトリを確認（遅延実行）
+          if (data.includes("\r") || data.includes("\n")) {
+            setTimeout(async () => {
+              try {
+                const currentCwd = await ptyBridge.getPtyCwd(pane.id);
+                if (currentCwd && currentCwd !== pane.cwd) {
+                  onCwdChange?.(currentCwd);
+                }
+              } catch (e) {
+                // Ignore errors (process might have exited)
+              }
+            }, 100);
+          }
+        });
+
+        // PTYからの出力をターミナルに表示
+        unlistenPtyData = await ptyBridge.onData(pane.id, (data) => {
+          terminal.write(data);
+          
+          // OSC 7 (Directory Change) シーケンスの簡易チェック
+          // \x1b]7;file://HOSTNAME/PATH\x1b\\
+          const text = new TextDecoder().decode(data);
+          if (text.includes("\x1b]7;")) {
+            const match = text.match(/\x1b]7;file:\/\/[^\/]+(\/[^\x1b\x07]+)/);
+            if (match && match[1]) {
+              let path = match[1];
+              // Windowsパスの補正 (/C:/... -> C:/...)
+              if (path.startsWith("/") && path.match(/^\/[a-zA-Z]:/)) {
+                path = path.substring(1);
+              }
+              onCwdChange?.(path);
+            }
+          }
+        });
+
         unlistenExit = await ptyBridge.onExit(pane.id, () => {
           updateStatus("exited");
           terminal.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
@@ -145,7 +186,7 @@ export function TerminalPane({
         }
         updateStatus("running");
 
-        terminal.onData((data) => ptyBridge.write(pane.id, data));
+        // リサイズハンドラ
         terminal.onResize(({ rows, cols }) => ptyBridge.resize(pane.id, rows, cols));
 
         requestAnimationFrame(() => {
@@ -167,8 +208,9 @@ export function TerminalPane({
 
     return () => {
       observer.disconnect();
-      unlistenData?.();
+      unlistenPtyData?.();
       unlistenExit?.();
+      dataDisposable?.dispose();
       terminal.dispose();
       terminalRef.current = null;
     };

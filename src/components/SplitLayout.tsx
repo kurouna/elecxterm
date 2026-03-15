@@ -8,6 +8,7 @@ interface SplitLayoutProps {
   activePane: string;
   onPaneActivate: (id: string) => void;
   onPaneStatusChange?: (id: string, status: PaneStatus) => void;
+  onPaneCwdChange?: (id: string, cwd: string) => void;
   onRatioChange?: (path: number[], ratios: number[]) => void;
   path?: number[];
   depth?: number;
@@ -18,6 +19,7 @@ export function SplitLayout({
   activePane,
   onPaneActivate,
   onPaneStatusChange,
+  onPaneCwdChange,
   onRatioChange,
   path = [],
   depth = 0,
@@ -35,6 +37,7 @@ export function SplitLayout({
           isActive={activePane === node.id}
           onFocus={() => onPaneActivate(node.id)}
           onStatusChange={(status) => onPaneStatusChange?.(node.id, status)}
+          onCwdChange={(cwd) => onPaneCwdChange?.(node.id, cwd)}
         />
       </motion.div>
     );
@@ -46,6 +49,7 @@ export function SplitLayout({
       activePane={activePane}
       onPaneActivate={onPaneActivate}
       onPaneStatusChange={onPaneStatusChange}
+      onPaneCwdChange={onPaneCwdChange}
       onRatioChange={onRatioChange}
       path={path}
       depth={depth}
@@ -58,6 +62,7 @@ interface SplitContainerProps {
   activePane: string;
   onPaneActivate: (id: string) => void;
   onPaneStatusChange?: (id: string, status: PaneStatus) => void;
+  onPaneCwdChange?: (id: string, cwd: string) => void;
   onRatioChange?: (path: number[], ratios: number[]) => void;
   path: number[];
   depth: number;
@@ -68,6 +73,7 @@ function SplitContainer({
   activePane,
   onPaneActivate,
   onPaneStatusChange,
+  onPaneCwdChange,
   onRatioChange,
   path,
   depth,
@@ -154,6 +160,7 @@ function SplitContainer({
               activePane={activePane}
               onPaneActivate={onPaneActivate}
               onPaneStatusChange={onPaneStatusChange}
+              onPaneCwdChange={onPaneCwdChange}
               onRatioChange={onRatioChange}
               path={[...path, index]}
               depth={depth + 1}

@@ -45,6 +45,11 @@ export const ptyBridge = {
     return await invoke<string>("get_cwd");
   },
 
+  /** 特定のPTYプロセスのカレントディレクトリを取得 */
+  async getPtyCwd(id: string): Promise<string> {
+    return await invoke<string>("get_pty_cwd", { id });
+  },
+
   /** PTYの出力データをリッスン */
   async onData(
     id: string,

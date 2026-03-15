@@ -22,6 +22,7 @@ function App() {
     closeTab,
     renameTab,
     updateTabCwd,
+    updatePaneCwd,
     activePane,
     setActivePane,
     splitPane,
@@ -53,6 +54,10 @@ function App() {
   const handlePaneStatusChange = useCallback((id: string, status: PaneStatus) => {
     setPaneStatuses((prev) => ({ ...prev, [id]: status }));
   }, []);
+
+  const handlePaneCwdChange = useCallback((id: string, cwd: string) => {
+    updatePaneCwd(id, cwd);
+  }, [updatePaneCwd]);
 
   const nextTab = useCallback(() => {
     const idx = tabs.findIndex((t) => t.id === activeTabId);
@@ -130,6 +135,7 @@ function App() {
             isActive={tab.id === activeTabId}
             onPaneActivate={setActivePane}
             onPaneStatusChange={handlePaneStatusChange}
+            onPaneCwdChange={handlePaneCwdChange}
             onRatioChange={updateRatio}
           />
         ))}

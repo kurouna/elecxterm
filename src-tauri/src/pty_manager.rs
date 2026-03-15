@@ -5,12 +5,14 @@ use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::{AppHandle, Emitter};
+use sysinfo::{System, Pid};
 
 /// PTYインスタンスごとの情報を保持する構造体
 struct PtyInstance {
     writer: Box<dyn Write + Send>,
     // PtyPairを保持してドロップされないようにする
     _pair: PtyPair,
+    pid: u32,
 }
 
 /// PTYマネージャー: 複数のPTYインスタンスを管理
@@ -125,6 +127,8 @@ impl PtyManager {
             }
         });
 
+        let pid = child.process_id().unwrap_or(0);
+
         // 子プロセスの終了を監視するスレッド
         let app_handle_for_child = app_handle.clone();
         let pty_id_for_child = pty_id.clone();
@@ -140,6 +144,7 @@ impl PtyManager {
             PtyInstance {
                 writer,
                 _pair: pair,
+                pid,
             },
         );
 
@@ -188,6 +193,23 @@ impl PtyManager {
             .remove(id)
             .ok_or_else(|| format!("PTY not found: {}", id))?;
         Ok(())
+    }
+
+    /// PTYのPIDに関連付けられたプロセスの現在の作業ディレクトリを取得する
+    pub fn get_pty_cwd(&self, id: &str) -> Result<String, String> {
+        let instance = self.instances.get(id)
+            .ok_or_else(|| format!("PTY not found: {}", id))?;
+        
+        let sys = System::new_all();
+        let pid = Pid::from(instance.pid as usize);
+        
+        if let Some(process) = sys.process(pid) {
+            process.cwd()
+                .map(|p| p.to_string_lossy().into_owned())
+                .ok_or_else(|| "Failed to get CWD from process".to_string())
+        } else {
+            Err(format!("Process not found for PID: {}", instance.pid))
+        }
     }
 }
 
