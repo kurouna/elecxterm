@@ -42,21 +42,23 @@ export function useLayout() {
   const activePane = activeTab?.activePaneId || "";
 
   /** デフォルトのレイアウト（単一ペイン） */
-  function createDefaultLayout(): LayoutNode {
+  function createDefaultLayout(cwd?: string): LayoutNode {
     return {
       type: "pane",
       id: generateId(),
-      shell: "cmd.exe",
+      shell: "powershell.exe",
+      cwd: cwd,
     };
   }
 
   /** 新しいタブを作成 */
-  const addTab = useCallback((name?: string) => {
+  const addTab = useCallback((name?: string, cwd?: string) => {
     const newTab: Tab = {
       id: generateId(),
       name: name || `Tab ${tabs.length + 1}`,
-      layout: createDefaultLayout(),
+      layout: createDefaultLayout(cwd),
       activePaneId: "",
+      defaultCwd: cwd,
     };
     // 初期ペインをアクティブに設定
     const first = findFirstPane(newTab.layout);
@@ -185,9 +187,16 @@ export function useLayout() {
 
       setTabs((prev) => prev.map(tab => {
         if (tab.id !== activeTabId) return tab;
+        
+        // ユーザー指定のCWDがない場合は、タブのdefaultCwdを使用する
+        const optionsWithCwd = {
+          cwd: tab.defaultCwd,
+          ...newPaneOptions
+        };
+
         return {
           ...tab,
-          layout: splitPaneInTree(tab.layout, paneId, direction, newPaneId, newPaneOptions),
+          layout: splitPaneInTree(tab.layout, paneId, direction, newPaneId, optionsWithCwd),
           activePaneId: newPaneId
         };
       }));
@@ -276,13 +285,23 @@ export function useLayout() {
     setTabs(prev => prev.map(t => t.id === id ? { ...t, name: newName } : t));
   }, []);
 
+  /** タブの次回の開始ディレクトリを変更（既存のペインは変えない） */
+  const updateTabCwd = useCallback((id: string, newCwd: string) => {
+    setTabs(prev => prev.map(t => t.id === id ? { 
+      ...t, 
+      defaultCwd: newCwd
+    } : t));
+  }, []);
+
   return {
     tabs,
+    activeTab,
     activeTabId,
     setActiveTabId,
     addTab,
     closeTab,
     renameTab,
+    updateTabCwd,
     layout,
     activePane,
     setActivePane,
@@ -296,7 +315,6 @@ export function useLayout() {
   };
 }
 
-/** ユーティリティ関数（変更なし） */
 function splitPaneInTree(node: LayoutNode, targetId: string, direction: "horizontal" | "vertical", newPaneId: string, newPaneOptions?: Partial<PaneNode>): LayoutNode {
   if (node.type === "pane") {
     if (node.id === targetId) {

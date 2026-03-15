@@ -17,6 +17,7 @@ pub fn run() {
             commands::write_pty,
             commands::resize_pty,
             commands::destroy_pty,
+            commands::get_cwd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

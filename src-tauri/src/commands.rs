@@ -41,6 +41,13 @@ pub fn resize_pty(
     manager.resize_pty(&options.id, options.rows, options.cols)
 }
 
+#[tauri::command]
+pub fn get_cwd() -> Result<String, String> {
+    std::env::current_dir()
+        .map(|p| p.to_string_lossy().into_owned())
+        .map_err(|e| format!("Failed to get current directory: {}", e))
+}
+
 /// PTYインスタンスを破棄するコマンド
 #[tauri::command]
 pub fn destroy_pty(

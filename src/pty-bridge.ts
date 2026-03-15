@@ -40,6 +40,11 @@ export const ptyBridge = {
     await invoke("destroy_pty", { id });
   },
 
+  /** システムのカレントディレクトリを取得 */
+  async getCwd(): Promise<string> {
+    return await invoke<string>("get_cwd");
+  },
+
   /** PTYの出力データをリッスン */
   async onData(
     id: string,

@@ -24,6 +24,7 @@ export interface Tab {
   name: string;
   layout: LayoutNode;
   activePaneId: string;
+  defaultCwd?: string;
 }
 
 /** セッション情報 */

@@ -30,7 +30,7 @@ export function TabBar({
   const [renameId, setRenameId] = useState<string | null>(null);
   const [tempName, setTempName] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
-  const renameInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -53,7 +53,7 @@ export function TabBar({
     if (tab) {
       setRenameId(tab.id);
       setTempName(tab.name);
-      setTimeout(() => renameInputRef.current?.focus(), 100);
+      setTimeout(() => inputRef.current?.focus(), 100);
     }
     setMenu(null);
   };
@@ -63,12 +63,6 @@ export function TabBar({
       onTabRename(renameId, tempName.trim());
     }
     setRenameId(null);
-  };
-
-  const handleCloseFromMenu = () => {
-    if (!menu) return;
-    onTabClose(menu.tabId);
-    setMenu(null);
   };
 
   return (
@@ -111,7 +105,7 @@ export function TabBar({
                 
                 {isRenaming ? (
                   <input
-                    ref={renameInputRef}
+                    ref={inputRef}
                     type="text"
                     value={tempName}
                     onChange={(e) => setTempName(e.target.value)}
@@ -156,7 +150,7 @@ export function TabBar({
         </svg>
       </button>
 
-      {/* New Professional Minimalist Context Menu */}
+      {/* Context Menu */}
       <AnimatePresence>
         {menu && (
           <>
@@ -181,8 +175,9 @@ export function TabBar({
                 <Edit3 size={11} className="opacity-60" />
                 <span>Rename Tab</span>
               </button>
+              <div className="mx-2 my-1 border-t border-border-dim/20" />
               <button
-                onClick={handleCloseFromMenu}
+                onClick={() => { onTabClose(menu.tabId); setMenu(null); }}
                 className="w-full flex items-center gap-3 px-3 py-1.5 text-[11px] font-normal text-tx-secondary hover:bg-red-500 hover:text-white transition-colors"
               >
                 <Trash2 size={11} className="opacity-60" />

@@ -201,7 +201,10 @@ export function TerminalPane({
         backgroundColor: isActive ? "var(--bg-surface)" : "var(--bg-main)",
       }}
     >
-      <div className="absolute top-1 right-2 z-10 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-bg-main/30 backdrop-blur-md border border-tx-primary/5">
+      {/* Status Badge */}
+      <div className={`absolute top-1 right-2 z-10 flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-tx-primary/5 transition-all ${
+        isActive && status === "running" ? "bg-bg-main/80 shadow-sm backdrop-blur-md" : "bg-bg-main/20 backdrop-blur-sm"
+      }`}>
         <div
           className={`h-1.5 w-1.5 rounded-full ${status === "running"
             ? "bg-[#22c55e]"
@@ -217,7 +220,7 @@ export function TerminalPane({
 
       <div
         ref={containerRef}
-        className="h-full w-full pt-6"
+        className="h-full w-full"
         style={{ background: "transparent" }}
       />
     </div>
