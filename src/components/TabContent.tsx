@@ -1,13 +1,11 @@
 import { SplitLayout } from "./SplitLayout";
-import { LayoutNode, PaneStatus } from "../types";
+import { LayoutNode } from "../types";
 
 interface TabContentProps {
   layout: LayoutNode;
   activePane: string;
   isActive: boolean;
   onPaneActivate: (id: string) => void;
-  onPaneStatusChange: (id: string, status: PaneStatus) => void;
-  onPaneCwdChange: (id: string, cwd: string) => void;
   onRatioChange: (path: number[], ratios: number[]) => void;
 }
 
@@ -16,8 +14,6 @@ export function TabContent({
   activePane,
   isActive,
   onPaneActivate,
-  onPaneStatusChange,
-  onPaneCwdChange,
   onRatioChange,
 }: TabContentProps) {
   return (
@@ -32,8 +28,6 @@ export function TabContent({
         node={layout}
         activePane={activePane}
         onPaneActivate={onPaneActivate}
-        onPaneStatusChange={onPaneStatusChange}
-        onPaneCwdChange={onPaneCwdChange}
         onRatioChange={onRatioChange}
       />
     </div>

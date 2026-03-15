@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useEffect } from "react";
 import { TitleBar } from "./components/TitleBar";
 import { TabBar } from "./components/TabBar";
 import { TabContent } from "./components/TabContent";
@@ -8,8 +8,9 @@ import { Prompt } from "./components/Prompt";
 import { ptyBridge } from "./pty-bridge";
 import { useLayout } from "./hooks/useLayout";
 import { useKeybinds } from "./hooks/useKeybinds";
-import { CommandItem, PaneStatus } from "./types";
+import { CommandItem } from "./types";
 import { useTheme } from "./ThemeContext";
+import { paneStateStore } from "./services/PaneStateStore";
 
 function App() {
   const { setTheme } = useTheme();
@@ -34,6 +35,26 @@ function App() {
     lastPane,
   } = useLayout();
 
+  // PaneStateStore の変更を監視して、永続化レイヤー（tabs）に同期する（デバウンス実行）
+  useEffect(() => {
+    let timer: any;
+    const syncToPersistentState = () => {
+      // 現在の volatile な CWD を tabs (useLayout) に反映する
+      // ここを呼ぶと全体が再描画されるので、頻度を大幅に下げる（2秒間静止後）
+      const statesEntries = Array.from((paneStateStore as any).states.entries()) as [string, any][];
+      for (const [id, state] of statesEntries) {
+        if (state.cwd) {
+          updatePaneCwd(id, state.cwd);
+        }
+      }
+    };
+
+    return paneStateStore.subscribeGlobal(() => {
+      clearTimeout(timer);
+      timer = setTimeout(syncToPersistentState, 2000);
+    });
+  }, [updatePaneCwd]);
+
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [promptConfig, setPromptConfig] = useState<{
     isOpen: boolean;
@@ -49,15 +70,6 @@ function App() {
     onSubmit: () => {},
   });
   
-  const [paneStatuses, setPaneStatuses] = useState<Record<string, PaneStatus>>({});
-
-  const handlePaneStatusChange = useCallback((id: string, status: PaneStatus) => {
-    setPaneStatuses((prev) => ({ ...prev, [id]: status }));
-  }, []);
-
-  const handlePaneCwdChange = useCallback((id: string, cwd: string) => {
-    updatePaneCwd(id, cwd);
-  }, [updatePaneCwd]);
 
   const nextTab = useCallback(() => {
     const idx = tabs.findIndex((t) => t.id === activeTabId);
@@ -113,23 +125,6 @@ function App() {
     { id: "theme-system", label: "Theme: Follow System", category: "THEME", action: () => setTheme("system") },
   ], [activePane, splitPane, closePane, addTab, nextTab, prevTab, setTheme, openCwdPrompt]);
 
-  // 現在存在する全ペインのIDを取得して、ステータスをフィルタリング
-  const filteredPaneStatuses = useMemo(() => {
-    const activeIds = new Set<string>();
-    const collectIds = (node: any) => {
-      if (node.type === "pane") activeIds.add(node.id);
-      else node.children?.forEach(collectIds);
-    };
-    tabs.forEach(t => collectIds(t.layout));
-    
-    const cleaned: Record<string, PaneStatus> = {};
-    for (const id in paneStatuses) {
-      if (activeIds.has(id)) {
-        cleaned[id] = paneStatuses[id];
-      }
-    }
-    return cleaned;
-  }, [tabs, paneStatuses]);
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden rounded-lg bg-bg-main shadow-2xl transition-colors duration-500">
@@ -152,15 +147,12 @@ function App() {
             activePane={tab.activePaneId}
             isActive={tab.id === activeTabId}
             onPaneActivate={setActivePane}
-            onPaneStatusChange={handlePaneStatusChange}
-            onPaneCwdChange={handlePaneCwdChange}
             onRatioChange={updateRatio}
           />
         ))}
       </div>
 
       <StatusBar 
-        paneStatuses={filteredPaneStatuses} 
         activeTabNumber={tabs.findIndex(t => t.id === activeTabId) + 1} 
         totalTabs={tabs.length} 
       />

@@ -1,16 +1,15 @@
-import { PaneStatus } from "../types";
+import { useAllPaneStatuses } from "../hooks/usePaneState";
 
 interface StatusBarProps {
-  paneStatuses: Record<string, PaneStatus>;
   activeTabNumber: number;
   totalTabs: number;
 }
 
 export function StatusBar({
-  paneStatuses,
   activeTabNumber,
   totalTabs,
 }: StatusBarProps) {
+  const paneStatuses = useAllPaneStatuses();
   const runningCount = Object.values(paneStatuses).filter(
     (s) => s === "running"
   ).length;

@@ -1,14 +1,12 @@
 import React, { useCallback, useRef, useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { LayoutNode, PaneStatus } from "../types";
+import { LayoutNode } from "../types";
 import { TerminalPane } from "./TerminalPane";
 
 interface SplitLayoutProps {
   node: LayoutNode;
   activePane: string;
   onPaneActivate: (id: string) => void;
-  onPaneStatusChange?: (id: string, status: PaneStatus) => void;
-  onPaneCwdChange?: (id: string, cwd: string) => void;
   onRatioChange?: (path: number[], ratios: number[]) => void;
   path?: number[];
   depth?: number;
@@ -18,8 +16,6 @@ export function SplitLayout({
   node,
   activePane,
   onPaneActivate,
-  onPaneStatusChange,
-  onPaneCwdChange,
   onRatioChange,
   path = [],
   depth = 0,
@@ -36,8 +32,6 @@ export function SplitLayout({
           pane={node}
           isActive={activePane === node.id}
           onFocus={() => onPaneActivate(node.id)}
-          onStatusChange={(status) => onPaneStatusChange?.(node.id, status)}
-          onCwdChange={(cwd) => onPaneCwdChange?.(node.id, cwd)}
         />
       </motion.div>
     );
@@ -48,8 +42,6 @@ export function SplitLayout({
       node={node as LayoutNode & { type: "horizontal" | "vertical" }}
       activePane={activePane}
       onPaneActivate={onPaneActivate}
-      onPaneStatusChange={onPaneStatusChange}
-      onPaneCwdChange={onPaneCwdChange}
       onRatioChange={onRatioChange}
       path={path}
       depth={depth}
@@ -61,8 +53,6 @@ interface SplitContainerProps {
   node: LayoutNode & { type: "horizontal" | "vertical" };
   activePane: string;
   onPaneActivate: (id: string) => void;
-  onPaneStatusChange?: (id: string, status: PaneStatus) => void;
-  onPaneCwdChange?: (id: string, cwd: string) => void;
   onRatioChange?: (path: number[], ratios: number[]) => void;
   path: number[];
   depth: number;
@@ -72,8 +62,6 @@ function SplitContainer({
   node,
   activePane,
   onPaneActivate,
-  onPaneStatusChange,
-  onPaneCwdChange,
   onRatioChange,
   path,
   depth,
@@ -159,8 +147,6 @@ function SplitContainer({
               node={child}
               activePane={activePane}
               onPaneActivate={onPaneActivate}
-              onPaneStatusChange={onPaneStatusChange}
-              onPaneCwdChange={onPaneCwdChange}
               onRatioChange={onRatioChange}
               path={[...path, index]}
               depth={depth + 1}

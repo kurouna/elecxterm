@@ -5,12 +5,14 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { ptyBridge } from "../pty-bridge";
 import { PaneNode, PaneStatus } from "../types";
 import { useTheme } from "../ThemeContext";
+import { usePaneState, usePaneStateActions } from "../hooks/usePaneState";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalPaneProps {
   pane: PaneNode;
   isActive: boolean;
   onFocus: () => void;
+  // 以下は store 経由で更新されるようになるが、まだ App.tsx 側で期待されているため残す
   onStatusChange?: (status: PaneStatus) => void;
   onCwdChange?: (cwd: string) => void;
 }
@@ -42,19 +44,19 @@ const DARK_THEME = {
 
 const LIGHT_THEME = {
   background: "#ffffff",
-  foreground: "#1e293b", // 少し和らげた黒
+  foreground: "#1e293b",
   cursor: "#2563eb",
   cursorAccent: "#ffffff",
   selectionBackground: "rgba(37, 99, 235, 0.15)",
   selectionForeground: "#1e293b",
   black: "#0f172a",
-  red: "#be123c",      // 少し暗めの赤
-  green: "#15803d",    // 少し暗めの緑
-  yellow: "#a16207",   // 少し暗めの黄色
-  blue: "#1d4ed8",     // 少し暗めの青
-  magenta: "#7e22ce",  // 少し暗めのマゼンタ
-  cyan: "#0e7490",     // 少し暗めのシアン
-  white: "#475569",    // 重要な修正: 以前は白すぎて見えなかった。ディレクトリ表示などに使われる。
+  red: "#be123c",
+  green: "#15803d",
+  yellow: "#a16207",
+  blue: "#1d4ed8",
+  magenta: "#7e22ce",
+  cyan: "#0e7490",
+  white: "#475569",
   brightBlack: "#64748b",
   brightRed: "#e11d48",
   brightGreen: "#16a34a",
@@ -62,7 +64,7 @@ const LIGHT_THEME = {
   brightBlue: "#2563eb",
   brightMagenta: "#9333ea",
   brightCyan: "#0891b2",
-  brightWhite: "#0f172a", // 常に暗い色にする
+  brightWhite: "#0f172a",
 };
 
 export function TerminalPane({
@@ -76,21 +78,32 @@ export function TerminalPane({
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const [status, setStatus] = useState<PaneStatus>("running");
+  
+  // マネージャー経由の揮発的な状態管理
+  const { status: volatileStatus } = usePaneState(pane.id);
+  const { updateCwd, updateStatus } = usePaneStateActions();
+  
   const initializedRef = useRef(false);
 
-  const updateStatus = useCallback(
+  const handleStatusUpdate = useCallback(
     (newStatus: PaneStatus) => {
-      setStatus(newStatus);
+      updateStatus(pane.id, newStatus);
       onStatusChange?.(newStatus);
     },
-    [onStatusChange]
+    [pane.id, updateStatus, onStatusChange]
+  );
+
+  const handleCwdUpdate = useCallback(
+    (newCwd: string) => {
+      updateCwd(pane.id, newCwd);
+      onCwdChange?.(newCwd);
+    },
+    [pane.id, updateCwd, onCwdChange]
   );
 
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // Build terminal with requested fonts and BOLD to fix blur on Windows
     const terminal = new Terminal({
       fontFamily: '"Cascadia Mono", "JetBrains Mono", "Noto Sans JP", "BIZ UDGothic", "Meiryo", "Yu Gothic", Consolas, monospace',
       fontSize: 14,
@@ -107,16 +120,11 @@ export function TerminalPane({
 
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
-
-    // mount after setup
     terminal.open(containerRef.current);
 
-    // load WebGL addon to fix blurriness
     try {
       const webglAddon = new WebglAddon();
-      webglAddon.onContextLoss(() => {
-        webglAddon.dispose();
-      });
+      webglAddon.onContextLoss(() => webglAddon.dispose());
       terminal.loadAddon(webglAddon);
     } catch (e) {
       console.warn("WebGL addon failed to load:", e);
@@ -131,31 +139,22 @@ export function TerminalPane({
 
     const setupTerminal = async () => {
       try {
-        // キーボード入力をPTYに送信
         dataDisposable = terminal.onData((data) => {
           ptyBridge.write(pane.id, data);
-
-          // Enterキーなどが押された際にディレクトリを確認（遅延実行）
           if (data.includes("\r") || data.includes("\n")) {
             setTimeout(async () => {
               try {
                 const currentCwd = await ptyBridge.getPtyCwd(pane.id);
                 if (currentCwd && currentCwd !== pane.cwd) {
-                  onCwdChange?.(currentCwd);
+                  handleCwdUpdate(currentCwd);
                 }
-              } catch (e) {
-                // Ignore errors (process might have exited)
-              }
+              } catch (e) {}
             }, 100);
           }
         });
 
-        // PTYからの出力をターミナルに表示
         unlistenPtyData = await ptyBridge.onData(pane.id, (data) => {
           terminal.write(data);
-
-          // OSC 7 (Directory Change) シーケンスのチェック
-          // パフォーマンスのため、エスケープ文字(0x1b)が含まれている場合のみデコードを試みる
           if (data.includes(0x1b)) {
             const text = new TextDecoder().decode(data);
             if (text.includes("\x1b]7;")) {
@@ -165,14 +164,14 @@ export function TerminalPane({
                 if (path.startsWith("/") && path.match(/^\/[a-zA-Z]:/)) {
                   path = path.substring(1);
                 }
-                onCwdChange?.(path);
+                handleCwdUpdate(path);
               }
             }
           }
         });
 
         unlistenExit = await ptyBridge.onExit(pane.id, () => {
-          updateStatus("exited");
+          handleStatusUpdate("exited");
           terminal.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
         });
 
@@ -187,9 +186,8 @@ export function TerminalPane({
             cols: dims?.cols ?? 80,
           });
         }
-        updateStatus("running");
+        handleStatusUpdate("running");
 
-        // リサイズハンドラ
         terminal.onResize(({ rows, cols }) => ptyBridge.resize(pane.id, rows, cols));
 
         requestAnimationFrame(() => {
@@ -198,7 +196,7 @@ export function TerminalPane({
         });
       } catch (e) {
         console.error("Terminal setup failed:", e);
-        updateStatus("error");
+        handleStatusUpdate("error");
       }
     };
 
@@ -232,7 +230,7 @@ export function TerminalPane({
     }
   }, [isActive]);
 
-  const borderClass = status === "error"
+  const borderClass = volatileStatus === "error"
     ? "border-border-error shadow-[0_0_10px_rgba(220,38,38,0.3)]"
     : isActive
       ? "border-accent shadow-[0_0_12px_var(--color-accent-dim)]"
@@ -247,15 +245,15 @@ export function TerminalPane({
       }}
     >
       {/* Status Badge */}
-      <div className={`absolute top-1 right-2 z-10 flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-tx-primary/5 transition-all ${isActive && status === "running" ? "bg-bg-main/80 shadow-sm backdrop-blur-md" : "bg-bg-main/20 backdrop-blur-sm"
+      <div className={`absolute top-1 right-2 z-10 flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-tx-primary/5 transition-all ${isActive && volatileStatus === "running" ? "bg-bg-main/80 shadow-sm backdrop-blur-md" : "bg-bg-main/20 backdrop-blur-sm"
         }`}>
         <div
-          className={`h-1.5 w-1.5 rounded-full ${status === "running"
+          className={`h-1.5 w-1.5 rounded-full ${volatileStatus === "running"
             ? "bg-[#22c55e]"
             : "bg-[#ef4444]"
-            } ${isActive && status === "running" ? "shadow-[0_0_8px_#22c55e] animate-pulse" : ""}`}
+            } ${isActive && volatileStatus === "running" ? "shadow-[0_0_8px_#22c55e] animate-pulse" : ""}`}
         />
-        {isActive && status === "running" && (
+        {isActive && volatileStatus === "running" && (
           <span className="text-[8px] font-bold text-[#22c55e] uppercase tracking-widest leading-none" style={{ marginTop: '1px' }}>
             Active
           </span>
