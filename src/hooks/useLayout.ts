@@ -46,7 +46,7 @@ export function useLayout() {
     return {
       type: "pane",
       id: generateId(),
-      shell: "powershell.exe",
+      shell: "cmd.exe",
       cwd: cwd,
     };
   }
@@ -335,7 +335,13 @@ function updateCwdInTreeForPane(node: LayoutNode, paneId: string, newCwd: string
 function splitPaneInTree(node: LayoutNode, targetId: string, direction: "horizontal" | "vertical", newPaneId: string, newPaneOptions?: Partial<PaneNode>): LayoutNode {
   if (node.type === "pane") {
     if (node.id === targetId) {
-      const newPane: PaneNode = { type: "pane", id: newPaneId, shell: newPaneOptions?.shell ?? node.shell, cwd: newPaneOptions?.cwd ?? node.cwd, ...newPaneOptions };
+      const newPane: PaneNode = { 
+        type: "pane", 
+        id: newPaneId, 
+        shell: newPaneOptions?.shell ?? node.shell ?? "cmd.exe", 
+        cwd: newPaneOptions?.cwd ?? node.cwd, 
+        ...newPaneOptions 
+      };
       return { id: `split-${Date.now()}`, type: direction, children: [node, newPane], ratio: [0.5, 0.5] };
     }
     return node;

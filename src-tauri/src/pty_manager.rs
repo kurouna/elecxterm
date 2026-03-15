@@ -66,7 +66,7 @@ impl PtyManager {
         // シェルの決定
         let shell = options.shell.unwrap_or_else(|| {
             if cfg!(target_os = "windows") {
-                "powershell.exe".to_string()
+                "cmd.exe".to_string()
             } else {
                 std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
             }

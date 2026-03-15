@@ -93,8 +93,8 @@ function App() {
     onPrevPane: prevPane,
     onFirstPane: firstPane,
     onLastPane: lastPane,
-    onSplitHorizontal: () => activePane && splitPane(activePane, "horizontal"),
-    onSplitVertical: () => activePane && splitPane(activePane, "vertical"),
+    onSplitHorizontal: (shell) => activePane && splitPane(activePane, "horizontal", { shell }),
+    onSplitVertical: (shell) => activePane && splitPane(activePane, "vertical", { shell }),
     onClosePane: () => activePane && closePane(activePane),
   });
 
