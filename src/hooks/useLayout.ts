@@ -24,6 +24,7 @@ function findFirstPane(node: LayoutNode): PaneNode | null {
 export function useLayout() {
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string>("");
+  const [appDefaultCwd, setAppDefaultCwd] = useState<string | undefined>(undefined);
   const [isLoaded, setIsLoaded] = useState(false);
 
   /** 全ペインIDを順序通りに取得 */
@@ -53,12 +54,13 @@ export function useLayout() {
 
   /** 新しいタブを作成 */
   const addTab = useCallback((name?: string, cwd?: string) => {
+    const finalCwd = cwd || appDefaultCwd;
     const newTab: Tab = {
       id: generateId(),
       name: name || `Tab ${tabs.length + 1}`,
-      layout: createDefaultLayout(cwd),
+      layout: createDefaultLayout(finalCwd),
       activePaneId: "",
-      defaultCwd: cwd,
+      defaultCwd: finalCwd,
     };
     // 初期ペインをアクティブに設定
     const first = findFirstPane(newTab.layout);
@@ -66,7 +68,7 @@ export function useLayout() {
 
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(newTab.id);
-  }, [tabs.length]);
+  }, [tabs.length, appDefaultCwd]);
 
   const closeTab = useCallback((id: string) => {
     // 1. PTY cleanup
@@ -96,8 +98,9 @@ export function useLayout() {
         const newTab: Tab = {
           id: generateId(),
           name: "Tab 1",
-          layout: createDefaultLayout(),
+          layout: createDefaultLayout(appDefaultCwd),
           activePaneId: "",
+          defaultCwd: appDefaultCwd,
         };
         const first = findFirstPane(newTab.layout);
         if (first) newTab.activePaneId = first.id;
@@ -111,7 +114,7 @@ export function useLayout() {
       
       return filtered;
     });
-  }, [tabs, activeTabId, setActiveTabId, getAllPaneIds]);
+  }, [tabs, activeTabId, setActiveTabId, getAllPaneIds, appDefaultCwd]);
 
   // セッションの読み込み
   useEffect(() => {
@@ -140,6 +143,9 @@ export function useLayout() {
             addTab("Main");
           }
         }
+
+        const savedAppDefaultCwd = await store.get<string>("appDefaultCwd");
+        if (savedAppDefaultCwd) setAppDefaultCwd(savedAppDefaultCwd);
       } catch (e) {
         console.error("Failed to load session:", e);
         addTab("Main");
@@ -159,6 +165,7 @@ export function useLayout() {
         const store = await load(STORE_PATH);
         await store.set("tabs", tabs);
         await store.set("activeTabId", activeTabId);
+        await store.set("appDefaultCwd", appDefaultCwd);
         await store.save();
       } catch (e) {
         console.error("Failed to save session:", e);
@@ -168,7 +175,7 @@ export function useLayout() {
     // 状態が変更されたら即座に、あるいは短いバッファで保存
     const timer = setTimeout(saveSession, 500);
     return () => clearTimeout(timer);
-  }, [tabs, activeTabId, isLoaded]);
+  }, [tabs, activeTabId, appDefaultCwd, isLoaded]);
 
 
   /** アクティブタブのペインをアクティブにする */
@@ -295,10 +302,13 @@ export function useLayout() {
 
   /** タブの次回の開始ディレクトリを変更（既存のペインは変えない） */
   const updateTabCwd = useCallback((id: string, newCwd: string) => {
+    // タブの個別設定を更新
     setTabs(prev => prev.map(t => t.id === id ? { 
       ...t, 
       defaultCwd: newCwd
     } : t));
+    // アプリ全体の規定値としても保持する
+    setAppDefaultCwd(newCwd);
   }, []);
 
   return {
