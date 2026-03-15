@@ -95,7 +95,7 @@ export function TerminalPane({
       fontFamily: '"Cascadia Mono", "JetBrains Mono", "Noto Sans JP", "BIZ UDGothic", "Meiryo", "Yu Gothic", Consolas, monospace',
       fontSize: 14,
       lineHeight: 1.2,
-      fontWeight: '500', // 物理的に線を太くしてかすれを解消
+      fontWeight: 'normal', 
       fontWeightBold: 'bold',
       cursorBlink: true,
       cursorStyle: "bar",
@@ -114,8 +114,12 @@ export function TerminalPane({
     // load WebGL addon to fix blurriness
     try {
       const webglAddon = new WebglAddon();
-      webglAddon.onContextLoss(() => webglAddon.dispose());
+      webglAddon.onContextLoss(() => {
+        webglAddon.dispose();
+        terminal.options.fontWeight = 'normal';
+      });
       terminal.loadAddon(webglAddon);
+      terminal.options.fontWeight = '500';
     } catch (e) {
       console.warn("WebGL addon failed to load:", e);
     }
