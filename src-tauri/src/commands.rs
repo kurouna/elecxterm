@@ -53,7 +53,7 @@ pub fn get_pty_cwd(
     state: State<'_, SharedPtyManager>,
     id: String,
 ) -> Result<String, String> {
-    let manager = state
+    let mut manager = state
         .lock()
         .map_err(|e| format!("Failed to lock pty manager: {}", e))?;
     manager.get_pty_cwd(&id)

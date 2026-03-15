@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::{AppHandle, Emitter};
-use sysinfo::{System, Pid};
+use sysinfo::{System, Pid, ProcessesToUpdate};
 
 /// PTYインスタンスごとの情報を保持する構造体
 struct PtyInstance {
@@ -18,6 +18,7 @@ struct PtyInstance {
 /// PTYマネージャー: 複数のPTYインスタンスを管理
 pub struct PtyManager {
     instances: HashMap<String, PtyInstance>,
+    sys: System,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -40,6 +41,7 @@ impl PtyManager {
     pub fn new() -> Self {
         PtyManager {
             instances: HashMap::new(),
+            sys: System::new(),
         }
     }
 
@@ -196,14 +198,16 @@ impl PtyManager {
     }
 
     /// PTYのPIDに関連付けられたプロセスの現在の作業ディレクトリを取得する
-    pub fn get_pty_cwd(&self, id: &str) -> Result<String, String> {
+    pub fn get_pty_cwd(&mut self, id: &str) -> Result<String, String> {
         let instance = self.instances.get(id)
             .ok_or_else(|| format!("PTY not found: {}", id))?;
         
-        let sys = System::new_all();
         let pid = Pid::from(instance.pid as usize);
         
-        if let Some(process) = sys.process(pid) {
+        // 該当PIDのみリフレッシュ（System::new_allより遥かに高速）
+        self.sys.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
+        
+        if let Some(process) = self.sys.process(pid) {
             process.cwd()
                 .map(|p| p.to_string_lossy().into_owned())
                 .ok_or_else(|| "Failed to get CWD from process".to_string())
