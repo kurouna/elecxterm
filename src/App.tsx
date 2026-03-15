@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState, useEffect } from "react";
+import { useCallback, useMemo, useState, useEffect, useRef } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { TitleBar } from "./components/TitleBar";
 import { TabBar } from "./components/TabBar";
 import { TabContent } from "./components/TabContent";
@@ -13,7 +14,25 @@ import { useTheme } from "./ThemeContext";
 import { paneStateStore } from "./services/PaneStateStore";
 
 function App() {
-  const { setTheme } = useTheme();
+  const { setTheme, resolvedTheme } = useTheme();
+  const isFirstRender = useRef(true);
+
+  // テーマの準備ができたらウィンドウを表示
+  useEffect(() => {
+    if (isFirstRender.current) {
+      const appWindow = getCurrentWindow();
+      
+      // テーマが適用され、DOMの準備が整ってから表示
+      // requestAnimationFrame を重ねることで確実に描画を待つ
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          document.documentElement.style.visibility = 'visible';
+          appWindow.show();
+        });
+      });
+      isFirstRender.current = false;
+    }
+  }, [resolvedTheme]);
   const {
     tabs,
     activeTab,
