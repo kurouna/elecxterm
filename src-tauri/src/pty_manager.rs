@@ -48,6 +48,9 @@ impl PtyManager {
         app_handle: &AppHandle,
         options: PtyCreateOptions,
     ) -> Result<String, String> {
+        if self.instances.contains_key(&options.id) {
+            return Ok(options.id);
+        }
         let pty_system = NativePtySystem::default();
 
         let rows = options.rows.unwrap_or(24);

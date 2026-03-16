@@ -74,19 +74,15 @@ export function TerminalPane({
   onStatusChange,
 }: TerminalPaneProps) {
   const { resolvedTheme } = useTheme();
-  // Contextから自分のタブのアクティブ状態を取得（プロパティ渡しを廃止しシンプル化）
   const { isActive: isTabActive } = useTabVisibility();
   
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   
-  // マネージャー経由の揮発的な状態管理
   const { status: volatileStatus } = usePaneState(pane.id);
   const { updateStatus } = usePaneStateActions();
   
-  const initializedRef = useRef(false);
-
   const handleStatusUpdate = useCallback(
     (newStatus: PaneStatus) => {
       updateStatus(pane.id, newStatus);
@@ -94,7 +90,6 @@ export function TerminalPane({
     },
     [pane.id, updateStatus, onStatusChange]
   );
-
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -130,14 +125,10 @@ export function TerminalPane({
 
     let unlistenPtyData: (() => void) | null = null;
     let unlistenExit: (() => void) | null = null;
-    let dataDisposable: { dispose(): void; } | null = null;
+    const dataDisposable = terminal.onData((data) => ptyBridge.write(pane.id, data));
 
-    const setupTerminal = async () => {
+    const connectPty = async () => {
       try {
-        dataDisposable = terminal.onData((data) => {
-          ptyBridge.write(pane.id, data);
-        });
-
         unlistenPtyData = await ptyBridge.onData(pane.id, (data) => {
           terminal.write(data);
         });
@@ -147,35 +138,37 @@ export function TerminalPane({
           terminal.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
         });
 
-        if (!initializedRef.current) {
-          initializedRef.current = true;
-          handleStatusUpdate("running");
-          const dims = fitAddon.proposeDimensions();
-          await ptyBridge.create({
-            id: pane.id,
-            cwd: pane.cwd,
-            shell: pane.shell,
-            rows: dims?.rows ?? 24,
-            cols: dims?.cols ?? 80,
-          });
-        }
+        const dims = fitAddon.proposeDimensions();
+        await ptyBridge.create({
+          id: pane.id,
+          cwd: pane.cwd,
+          shell: pane.shell,
+          rows: dims?.rows ?? 24,
+          cols: dims?.cols ?? 80,
+        });
 
-        terminal.onResize(({ rows, cols }) => ptyBridge.resize(pane.id, rows, cols));
-
+        handleStatusUpdate("running");
+        
         requestAnimationFrame(() => {
           fitAddon.fit();
+          terminal.refresh(0, terminal.rows - 1);
           if (isActive && isTabActive) terminal.focus();
         });
+
+        terminal.onResize(({ rows, cols }) => ptyBridge.resize(pane.id, rows, cols));
       } catch (e) {
-        console.error("Terminal setup failed:", e);
+        console.error("PTY connection failed:", e);
         handleStatusUpdate("error");
       }
     };
 
-    setupTerminal();
+    connectPty();
 
     const observer = new ResizeObserver(() => {
-      try { fitAddon.fit(); } catch { }
+      try { 
+        fitAddon.fit(); 
+        terminal.refresh(0, terminal.rows - 1);
+      } catch { }
     });
     observer.observe(containerRef.current);
 
@@ -183,10 +176,9 @@ export function TerminalPane({
       observer.disconnect();
       unlistenPtyData?.();
       unlistenExit?.();
-      dataDisposable?.dispose();
+      dataDisposable.dispose();
       terminal.dispose();
       terminalRef.current = null;
-      initializedRef.current = false;
     };
   }, [pane.id]);
 
@@ -197,21 +189,16 @@ export function TerminalPane({
     }
   }, [resolvedTheme]);
 
-  // タブまたはペインがアクティブになった際のフォーカス制御
   useEffect(() => {
     if (isActive && isTabActive && terminalRef.current) {
       let rafId: number;
-      
       const handleFocus = () => {
-        // Double requestAnimationFrame:
-        // 1つ目で次の描画を待ち、2つ目で描画が完了した（visibility: visible が反映された）直後に実行する
         rafId = requestAnimationFrame(() => {
           rafId = requestAnimationFrame(() => {
             terminalRef.current?.focus();
           });
         });
       };
-
       handleFocus();
       return () => {
         if (rafId) cancelAnimationFrame(rafId);
@@ -233,7 +220,6 @@ export function TerminalPane({
         backgroundColor: isActive ? "var(--bg-surface)" : "var(--bg-main)",
       }}
     >
-      {/* Status Badge */}
       <div className={`absolute top-1 right-2 z-10 flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-tx-primary/5 transition-all ${isActive && volatileStatus === "running" ? "bg-bg-main/80 shadow-sm backdrop-blur-md" : "bg-bg-main/20 backdrop-blur-sm"
         }`}>
         <div
