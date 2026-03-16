@@ -165,7 +165,11 @@ export function TerminalPane({
           cols: dims?.cols ?? 80,
         });
 
-        handleStatusUpdate("running");
+        const { paneStateStore } = await import("../services/PaneStateStore");
+        const currentState = paneStateStore.getPaneState(pane.id);
+        if (currentState.status !== "exited") {
+          handleStatusUpdate("running");
+        }
         
         requestAnimationFrame(() => {
           requestAnimationFrame(refreshTerminal);
