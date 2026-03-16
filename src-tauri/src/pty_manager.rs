@@ -5,12 +5,10 @@ use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::{AppHandle, Emitter};
-use base64::{Engine as _, engine::general_purpose};
 
 /// PTYインスタンスごとの情報を保持する構造体
 struct PtyInstance {
     writer: Box<dyn Write + Send>,
-    // PtyPairを保持してドロップされないようにする
     _pair: PtyPair,
 }
 
@@ -51,8 +49,8 @@ impl PtyManager {
         if self.instances.contains_key(&options.id) {
             return Ok(options.id);
         }
-        let pty_system = NativePtySystem::default();
 
+        let pty_system = NativePtySystem::default();
         let rows = options.rows.unwrap_or(24);
         let cols = options.cols.unwrap_or(80);
 
@@ -65,7 +63,6 @@ impl PtyManager {
             })
             .map_err(|e| format!("Failed to open pty: {}", e))?;
 
-        // シェルの決定
         let shell = options.shell.unwrap_or_else(|| {
             if cfg!(target_os = "windows") {
                 "cmd.exe".to_string()
@@ -75,8 +72,6 @@ impl PtyManager {
         });
 
         let mut cmd = CommandBuilder::new(&shell);
-
-        // 作業ディレクトリの設定
         if let Some(ref cwd) = options.cwd {
             cmd.cwd(cwd);
         }
@@ -86,7 +81,6 @@ impl PtyManager {
             .spawn_command(cmd)
             .map_err(|e| format!("Failed to spawn command: {}", e))?;
 
-        // 出力リーダーを取得
         let mut reader = pair
             .master
             .try_clone_reader()
@@ -101,43 +95,35 @@ impl PtyManager {
         let app_handle_clone = app_handle.clone();
         let pty_id_for_thread = pty_id.clone();
 
-        // 出力を読み取ってフロントエンドにイベントとして送信するスレッド
-        thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match reader.read(&mut buf) {
-                    Ok(0) => {
-                        // PTYが閉じられた
-                        let _ = app_handle_clone
-                            .emit(&format!("pty-exit-{}", pty_id_for_thread), ());
-                        break;
-                    }
-                    Ok(n) => {
-                        let data = &buf[..n];
-                        // バイナリデータを直接送信
-                        let _ = app_handle_clone
-                            .emit(&format!("pty-data-{}", pty_id_for_thread), data);
-                    }
-                    Err(e) => {
-                        log::error!("PTY read error for {}: {}", pty_id_for_thread, e);
-                        let _ = app_handle_clone
-                            .emit(&format!("pty-exit-{}", pty_id_for_thread), ());
-                        break;
+        // 出力読み取りスレッド
+        thread::Builder::new()
+            .name(format!("pty-read-{}", pty_id))
+            .spawn(move || {
+                let mut buf = [0u8; 8192]; // バッファサイズを拡張して効率化
+                loop {
+                    match reader.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            let _ = app_handle_clone.emit(&format!("pty-data-{}", pty_id_for_thread), &buf[..n]);
+                        }
+                        Err(_) => break,
                     }
                 }
-            }
-        });
+                let _ = app_handle_clone.emit(&format!("pty-exit-{}", pty_id_for_thread), ());
+            })
+            .map_err(|e| format!("Failed to spawn read thread: {}", e))?;
 
-
-        // 子プロセスの終了を監視するスレッド
+        // 子プロセス終了監視スレッド
         let app_handle_for_child = app_handle.clone();
         let pty_id_for_child = pty_id.clone();
-        thread::spawn(move || {
-            let mut child = child;
-            let _ = child.wait();
-            let _ = app_handle_for_child
-                .emit(&format!("pty-exit-{}", pty_id_for_child), ());
-        });
+        thread::Builder::new()
+            .name(format!("pty-wait-{}", pty_id))
+            .spawn(move || {
+                let mut child = child;
+                let _ = child.wait();
+                let _ = app_handle_for_child.emit(&format!("pty-exit-{}", pty_id_for_child), ());
+            })
+            .map_err(|e| format!("Failed to spawn wait thread: {}", e))?;
 
         self.instances.insert(
             pty_id.clone(),
@@ -150,53 +136,36 @@ impl PtyManager {
         Ok(pty_id)
     }
 
-    /// PTYに入力を書き込む
     pub fn write_to_pty(&mut self, id: &str, data: &[u8]) -> Result<(), String> {
         if let Some(instance) = self.instances.get_mut(id) {
-            instance
-                .writer
-                .write_all(data)
-                .map_err(|e| format!("Failed to write to pty: {}", e))?;
-            instance
-                .writer
-                .flush()
-                .map_err(|e| format!("Failed to flush pty: {}", e))?;
+            instance.writer.write_all(data).map_err(|e| e.to_string())?;
+            instance.writer.flush().map_err(|e| e.to_string())?;
             Ok(())
         } else {
             Err(format!("PTY not found: {}", id))
         }
     }
 
-    /// PTYのサイズを変更する
     pub fn resize_pty(&mut self, id: &str, rows: u16, cols: u16) -> Result<(), String> {
         if let Some(instance) = self.instances.get_mut(id) {
-            instance
-                ._pair
-                .master
-                .resize(PtySize {
-                    rows,
-                    cols,
-                    pixel_width: 0,
-                    pixel_height: 0,
-                })
-                .map_err(|e| format!("Failed to resize pty: {}", e))?;
+            instance._pair.master.resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            }).map_err(|e| e.to_string())?;
             Ok(())
         } else {
             Err(format!("PTY not found: {}", id))
         }
     }
 
-    /// PTYインスタンスを削除する
     pub fn destroy_pty(&mut self, id: &str) -> Result<(), String> {
-        self.instances
-            .remove(id)
-            .ok_or_else(|| format!("PTY not found: {}", id))?;
+        self.instances.remove(id).ok_or_else(|| format!("PTY not found: {}", id))?;
         Ok(())
     }
 }
 
-
-/// グローバルなPTYマネージャーの型エイリアス
 pub type SharedPtyManager = Arc<Mutex<PtyManager>>;
 
 pub fn create_shared_pty_manager() -> SharedPtyManager {
