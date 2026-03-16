@@ -6,6 +6,7 @@ import { ptyBridge } from "../pty-bridge";
 import { PaneNode, PaneStatus } from "../types";
 import { useTheme } from "../ThemeContext";
 import { usePaneState, usePaneStateActions } from "../hooks/usePaneState";
+import { useTabVisibility } from "./TabContent";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalPaneProps {
@@ -73,6 +74,9 @@ export function TerminalPane({
   onStatusChange,
 }: TerminalPaneProps) {
   const { resolvedTheme } = useTheme();
+  // Contextから自分のタブのアクティブ状態を取得（プロパティ渡しを廃止しシンプル化）
+  const { isActive: isTabActive } = useTabVisibility();
+  
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -160,7 +164,7 @@ export function TerminalPane({
 
         requestAnimationFrame(() => {
           fitAddon.fit();
-          if (isActive) terminal.focus();
+          if (isActive && isTabActive) terminal.focus();
         });
       } catch (e) {
         console.error("Terminal setup failed:", e);
@@ -182,6 +186,7 @@ export function TerminalPane({
       dataDisposable?.dispose();
       terminal.dispose();
       terminalRef.current = null;
+      initializedRef.current = false;
     };
   }, [pane.id]);
 
@@ -192,11 +197,18 @@ export function TerminalPane({
     }
   }, [resolvedTheme]);
 
+  // タブまたはペインがアクティブになった際のフォーカス制御
   useEffect(() => {
-    if (isActive && terminalRef.current) {
-      terminalRef.current.focus();
+    if (isActive && isTabActive) {
+      // visibility: visible に切り替わり、ブラウザがフォーカスを許可するまで僅かに待機
+      const timer = setTimeout(() => {
+        if (terminalRef.current) {
+          terminalRef.current.focus();
+        }
+      }, 50); 
+      return () => clearTimeout(timer);
     }
-  }, [isActive]);
+  }, [isActive, isTabActive]);
 
   const borderClass = volatileStatus === "error"
     ? "border-border-error shadow-[0_0_10px_rgba(220,38,38,0.3)]"

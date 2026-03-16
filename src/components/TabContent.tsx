@@ -1,5 +1,10 @@
+import React, { createContext, useContext } from "react";
 import { SplitLayout } from "./SplitLayout";
 import { LayoutNode } from "../types";
+
+// タブの表示状態を伝播するためのシンプルなContext
+const TabVisibilityContext = createContext({ isActive: false });
+export const useTabVisibility = () => useContext(TabVisibilityContext);
 
 interface TabContentProps {
   layout: LayoutNode;
@@ -17,19 +22,21 @@ export function TabContent({
   onRatioChange,
 }: TabContentProps) {
   return (
-    <div
-      className={`absolute inset-0 p-0.5 transition-all duration-300 ${
-        isActive 
-          ? "opacity-100 z-10 translate-y-0 scale-100 visible" 
-          : "opacity-0 z-0 translate-y-2 scale-[0.99] invisible pointer-events-none"
-      }`}
-    >
-      <SplitLayout
-        node={layout}
-        activePane={activePane}
-        onPaneActivate={onPaneActivate}
-        onRatioChange={onRatioChange}
-      />
-    </div>
+    <TabVisibilityContext.Provider value={{ isActive }}>
+      <div
+        className={`absolute inset-0 p-0.5 transition-all duration-300 ${
+          isActive 
+            ? "opacity-100 z-10 translate-y-0 scale-100 visible pointer-events-auto" 
+            : "opacity-0 z-0 translate-y-2 scale-[0.99] invisible pointer-events-none"
+        }`}
+      >
+        <SplitLayout
+          node={layout}
+          activePane={activePane}
+          onPaneActivate={onPaneActivate}
+          onRatioChange={onRatioChange}
+        />
+      </div>
+    </TabVisibilityContext.Provider>
   );
 }
