@@ -37,13 +37,8 @@ class PtyBridge {
     id: string,
     callback: (data: Uint8Array) => void
   ): Promise<UnlistenFn> {
-    return await listen<string>(`pty-data-${id}`, (event) => {
-      const binaryString = atob(event.payload);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      callback(bytes);
+    return await listen<Uint8Array>(`pty-data-${id}`, (event) => {
+      callback(event.payload);
     });
   }
 

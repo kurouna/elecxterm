@@ -114,10 +114,9 @@ impl PtyManager {
                     }
                     Ok(n) => {
                         let data = &buf[..n];
-                        // バイナリデータをBase64エンコードして送信
-                        let encoded = general_purpose::STANDARD.encode(data);
+                        // バイナリデータを直接送信
                         let _ = app_handle_clone
-                            .emit(&format!("pty-data-{}", pty_id_for_thread), encoded);
+                            .emit(&format!("pty-data-{}", pty_id_for_thread), data);
                     }
                     Err(e) => {
                         log::error!("PTY read error for {}: {}", pty_id_for_thread, e);
