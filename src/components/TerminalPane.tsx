@@ -13,7 +13,6 @@ interface TerminalPaneProps {
   pane: PaneNode;
   isActive: boolean;
   onFocus: () => void;
-  onStatusChange?: (status: PaneStatus) => void;
 }
 
 const DARK_THEME = {
@@ -70,7 +69,6 @@ export function TerminalPane({
   pane,
   isActive,
   onFocus,
-  onStatusChange,
 }: TerminalPaneProps) {
   const { resolvedTheme } = useTheme();
   const { isActive: isTabActive } = useTabVisibility();
@@ -85,9 +83,8 @@ export function TerminalPane({
   const handleStatusUpdate = useCallback(
     (newStatus: PaneStatus) => {
       updateStatus(pane.id, newStatus);
-      onStatusChange?.(newStatus);
     },
-    [pane.id, updateStatus, onStatusChange]
+    [pane.id, updateStatus]
   );
 
   const refreshTerminal = useCallback(() => {
