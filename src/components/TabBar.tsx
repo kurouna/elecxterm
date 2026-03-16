@@ -65,85 +65,113 @@ export function TabBar({
     setRenameId(null);
   };
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!activeTabId || !scrollRef.current) return;
+    
+    const activeElement = scrollRef.current.querySelector(`[data-tab-id="${activeTabId}"]`);
+    if (activeElement) {
+      activeElement.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "nearest",
+      });
+    }
+  }, [activeTabId]);
+
+  const handleWheel = (e: React.WheelEvent) => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollLeft += e.deltaY;
+    }
+  };
+
   return (
-    <div className="flex items-center h-9 bg-bg-main border-b border-border-dim px-3 gap-1.5 overflow-x-auto no-scrollbar transition-colors duration-300">
-      <AnimatePresence mode="popLayout">
-        {tabs.map((tab) => {
-          const isActive = activeTabId === tab.id;
-          const isRenaming = renameId === tab.id;
+    <div className="flex items-center h-9 bg-bg-main border-b border-border-dim px-3 transition-colors duration-300">
+      <div 
+        ref={scrollRef} 
+        onWheel={handleWheel}
+        className="flex-1 flex items-center h-full gap-1.5 overflow-x-auto no-scrollbar"
+      >
+        <AnimatePresence mode="popLayout">
+          {tabs.map((tab) => {
+            const isActive = activeTabId === tab.id;
+            const isRenaming = renameId === tab.id;
 
-          return (
-            <motion.div
-              key={tab.id}
-              layout
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              onClick={() => !isRenaming && onTabSelect(tab.id)}
-              onContextMenu={(e) => handleContextMenu(e, tab.id)}
-              className={`group relative flex items-center h-[30px] px-3 min-w-[124px] max-w-[220px] rounded-t-md cursor-pointer transition-all duration-200 select-none outline-none ${
-                isActive
-                  ? "bg-bg-surface text-tx-primary"
-                  : "bg-transparent text-tx-muted hover:bg-bg-elevated/40 hover:text-tx-secondary"
-              }`}
-            >
-              {isActive && (
-                <motion.div
-                  layoutId="active-tab-indicator"
-                  className="absolute top-0 left-0 right-0 h-[1.5px] bg-accent"
-                />
-              )}
-
-              <div className="flex items-center gap-2 flex-1 truncate">
-                <Terminal 
-                  size={11} 
-                  className={`flex-shrink-0 transition-colors ${
-                    isActive ? "text-accent" : "text-tx-muted/40"
-                  }`} 
-                  strokeWidth={2.5}
-                />
-                
-                {isRenaming ? (
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={tempName}
-                    onChange={(e) => setTempName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") submitRename();
-                      if (e.key === "Escape") setRenameId(null);
-                    }}
-                    onBlur={submitRename}
-                    className="w-full bg-accent-dim/10 text-[10px] font-normal text-tx-primary outline-none border-b border-accent px-1 py-0"
+            return (
+              <motion.div
+                key={tab.id}
+                data-tab-id={tab.id}
+                layout
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                onClick={() => !isRenaming && onTabSelect(tab.id)}
+                onContextMenu={(e) => handleContextMenu(e, tab.id)}
+                className={`group relative flex-shrink-0 flex items-center h-[30px] px-3 min-w-[124px] max-w-[220px] rounded-t-md cursor-pointer transition-all duration-200 select-none outline-none ${
+                  isActive
+                    ? "bg-bg-surface text-tx-primary"
+                    : "bg-transparent text-tx-muted hover:bg-bg-elevated/40 hover:text-tx-secondary"
+                }`}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId="active-tab-indicator"
+                    className="absolute top-0 left-0 right-0 h-[1.5px] bg-accent"
                   />
-                ) : (
-                  <span className="text-[10px] tracking-tight truncate font-normal font-sans">
-                    {tab.name}
-                  </span>
                 )}
-              </div>
 
-              {!isRenaming && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onTabClose(tab.id);
-                  }}
-                  className={`ml-1 w-4 h-4 flex items-center justify-center rounded-sm transition-all ${
-                    isActive ? "opacity-40 hover:opacity-100 hover:bg-tx-primary/10" : "opacity-0 group-hover:opacity-40 hover:bg-tx-primary/5"
-                  }`}
-                >
-                  <X size={10} strokeWidth={2} />
-                </button>
-              )}
-            </motion.div>
-          );
-        })}
-      </AnimatePresence>
+                <div className="flex items-center gap-2 flex-1 truncate">
+                  <Terminal 
+                    size={11} 
+                    className={`flex-shrink-0 transition-colors ${
+                      isActive ? "text-accent" : "text-tx-muted/40"
+                    }`} 
+                    strokeWidth={2.5}
+                  />
+                  
+                  {isRenaming ? (
+                    <input
+                      ref={inputRef}
+                      type="text"
+                      value={tempName}
+                      onChange={(e) => setTempName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") submitRename();
+                        if (e.key === "Escape") setRenameId(null);
+                      }}
+                      onBlur={submitRename}
+                      className="w-full bg-accent-dim/10 text-[10px] font-normal text-tx-primary outline-none border-b border-accent px-1 py-0"
+                    />
+                  ) : (
+                    <span className="text-[10px] tracking-tight truncate font-normal font-sans">
+                      {tab.name}
+                    </span>
+                  )}
+                </div>
+
+                {!isRenaming && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onTabClose(tab.id);
+                    }}
+                    className={`ml-1 w-4 h-4 flex items-center justify-center rounded-sm transition-all ${
+                      isActive ? "opacity-40 hover:opacity-100 hover:bg-tx-primary/10" : "opacity-0 group-hover:opacity-40 hover:bg-tx-primary/5"
+                    }`}
+                  >
+                    <X size={10} strokeWidth={2} />
+                  </button>
+                )}
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
+      </div>
 
       <button
         onClick={onTabAdd}
-        className="ml-1 w-7 h-7 flex items-center justify-center rounded-md text-tx-muted/60 hover:bg-bg-elevated/60 hover:text-accent transition-all duration-200"
+        className="flex-shrink-0 ml-2 w-7 h-7 flex items-center justify-center rounded-md text-tx-muted/60 hover:bg-bg-elevated/60 hover:text-accent transition-all duration-200"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
           <path d="M12 5V19M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
