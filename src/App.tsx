@@ -116,12 +116,14 @@ function App() {
     { id: "split-v-cmd", label: "Split Horizontally (CMD)", shortcut: "Ctrl+Shift+E", category: "LAYOUT", action: () => activePane && splitPane(activePane, "vertical", { shell: "cmd.exe" }) },
     { id: "split-v-ps", label: "Split Horizontally (PowerShell)", shortcut: "Ctrl+Alt+E", category: "LAYOUT", action: () => activePane && splitPane(activePane, "vertical", { shell: "powershell.exe" }) },
     { id: "close-pane", label: "Close Pane", shortcut: "Ctrl+Shift+W", category: "LAYOUT", action: () => activePane && closePane(activePane) },
-    { id: "next-tab", label: "Next Tab", shortcut: "Ctrl+Shift+→", category: "GENERAL", action: nextTab },
-    { id: "prev-tab", label: "Previous Tab", shortcut: "Ctrl+Shift+←", category: "GENERAL", action: prevTab },
+    { id: "next-pane", label: "Next Pane", shortcut: "Ctrl+Shift+N/↓", category: "LAYOUT", action: nextPane },
+    { id: "prev-pane", label: "Previous Pane", shortcut: "Ctrl+Shift+P/↑", category: "LAYOUT", action: prevPane },
+    { id: "next-tab", label: "Next Tab", shortcut: "Ctrl+Shift+F/→", category: "GENERAL", action: nextTab },
+    { id: "prev-tab", label: "Previous Tab", shortcut: "Ctrl+Shift+B/←", category: "GENERAL", action: prevTab },
     { id: "theme-dark", label: "Theme: Dark (Midnight)", category: "THEME", action: () => setTheme("dark") },
     { id: "theme-light", label: "Theme: Light (Daylight)", category: "THEME", action: () => setTheme("light") },
     { id: "theme-system", label: "Theme: Follow System", category: "THEME", action: () => setTheme("system") },
-  ], [activePane, splitPane, closePane, addTab, nextTab, prevTab, setTheme, openCwdPrompt]);
+  ], [activePane, splitPane, closePane, addTab, nextTab, prevTab, nextPane, prevPane, setTheme, openCwdPrompt]);
 
 
   return (

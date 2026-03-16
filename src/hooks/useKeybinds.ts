@@ -45,21 +45,27 @@ export function useKeybinds(options: KeybindOptions) {
             options.onNewTab();
             break;
           case "ArrowRight":
+          case "F":
             e.preventDefault();
             e.stopPropagation();
             options.onNextTab();
             break;
           case "ArrowLeft":
+          case "B":
             e.preventDefault();
             e.stopPropagation();
             options.onPrevTab();
             break;
           case "P":
+          case "ArrowUp":
             e.preventDefault();
+            e.stopPropagation();
             options.onPrevPane();
             break;
           case "N":
+          case "ArrowDown":
             e.preventDefault();
+            e.stopPropagation();
             options.onNextPane();
             break;
           case "<":

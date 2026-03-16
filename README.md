@@ -48,15 +48,15 @@
 | :--- | :--- |
 | `Ctrl+Shift+K` | コマンドパレットを開く |
 | `Ctrl+Shift+T` | 新しいタブを作成 |
-| `Ctrl+Shift+→` | 次のタブへ移動 |
-| `Ctrl+Shift+←` | 前のタブへ移動 |
+| `Ctrl+Shift+→ / F` | 次のタブへ移動 |
+| `Ctrl+Shift+← / B` | 前のタブへ移動 |
 | `Ctrl+Shift+D` | ペインを横に分割 (CMD) |
 | `Ctrl+Shift+E` | ペインを縦に分割 (CMD) |
 | `Ctrl+Alt+D` | ペインを横に分割 (PowerShell) |
 | `Ctrl+Alt+E` | ペインを縦に分割 (PowerShell) |
 | `Ctrl+Shift+W` | アクティブなペインを閉じる |
-| `Ctrl+Shift+N` | 次のペインへ移動 |
-| `Ctrl+Shift+P` | 前のペインへ移動 |
+| `Ctrl+Shift+N / ↓` | 次のペインへ移動 |
+| `Ctrl+Shift+P / ↑` | 前のペインへ移動 |
 | `Ctrl+Shift+<` | 先頭のペインへ移動 |
 | `Ctrl+Shift+>` | 最後のペインへ移動 |
 
