@@ -6,6 +6,7 @@ import { TerminalPane } from "./TerminalPane";
 interface SplitLayoutProps {
   node: LayoutNode;
   activePane: string;
+  fontFamily: string;
   onPaneActivate: (id: string) => void;
   onRatioChange?: (path: number[], ratios: number[]) => void;
   path?: number[];
@@ -15,6 +16,7 @@ interface SplitLayoutProps {
 export function SplitLayout({
   node,
   activePane,
+  fontFamily,
   onPaneActivate,
   onRatioChange,
   path = [],
@@ -31,6 +33,7 @@ export function SplitLayout({
         <TerminalPane
           pane={node}
           isActive={activePane === node.id}
+          fontFamily={fontFamily}
           onFocus={() => onPaneActivate(node.id)}
         />
       </motion.div>
@@ -41,6 +44,7 @@ export function SplitLayout({
     <SplitContainer
       node={node as LayoutNode & { type: "horizontal" | "vertical" }}
       activePane={activePane}
+      fontFamily={fontFamily}
       onPaneActivate={onPaneActivate}
       onRatioChange={onRatioChange}
       path={path}
@@ -52,6 +56,7 @@ export function SplitLayout({
 interface SplitContainerProps {
   node: LayoutNode & { type: "horizontal" | "vertical" };
   activePane: string;
+  fontFamily: string;
   onPaneActivate: (id: string) => void;
   onRatioChange?: (path: number[], ratios: number[]) => void;
   path: number[];
@@ -61,6 +66,7 @@ interface SplitContainerProps {
 function SplitContainer({
   node,
   activePane,
+  fontFamily,
   onPaneActivate,
   onRatioChange,
   path,
@@ -146,6 +152,7 @@ function SplitContainer({
             <SplitLayout
               node={child}
               activePane={activePane}
+              fontFamily={fontFamily}
               onPaneActivate={onPaneActivate}
               onRatioChange={onRatioChange}
               path={[...path, index]}

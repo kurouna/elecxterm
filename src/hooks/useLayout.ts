@@ -5,6 +5,7 @@ import { ptyBridge } from "../pty-bridge";
 
 const STORE_PATH = "elecxterm-settings.json";
 export const MAX_PANES = 15;
+export const DEFAULT_FONT_FAMILY = '"Cascadia Mono", "JetBrains Mono", "Noto Sans JP", "BIZ UDGothic", "Meiryo", "Yu Gothic", Consolas, monospace';
 
 // シンプルなID生成
 function generateId(): string {
@@ -35,6 +36,7 @@ export function useLayout() {
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string>("");
   const [appDefaultCwd, setAppDefaultCwd] = useState<string | undefined>(undefined);
+  const [fontFamily, setFontFamily] = useState<string>(DEFAULT_FONT_FAMILY);
   const [isLoaded, setIsLoaded] = useState(false);
 
   /** 全ペインIDを順序通りに取得 */
@@ -154,6 +156,9 @@ export function useLayout() {
 
         const savedAppDefaultCwd = await store.get<string>("appDefaultCwd");
         if (savedAppDefaultCwd) setAppDefaultCwd(savedAppDefaultCwd);
+
+        const savedFontFamily = await store.get<string>("fontFamily");
+        if (savedFontFamily) setFontFamily(savedFontFamily);
       } catch (e) {
         console.error("Failed to load session:", e);
         addTab("Main");
@@ -174,6 +179,7 @@ export function useLayout() {
         await store.set("tabs", tabs);
         await store.set("activeTabId", activeTabId);
         await store.set("appDefaultCwd", appDefaultCwd);
+        await store.set("fontFamily", fontFamily);
         await store.save();
       } catch (e) {
         console.error("Failed to save session:", e);
@@ -183,7 +189,7 @@ export function useLayout() {
     // 状態が変更されたら即座に、あるいは短いバッファで保存
     const timer = setTimeout(saveSession, 500);
     return () => clearTimeout(timer);
-  }, [tabs, activeTabId, appDefaultCwd, isLoaded]);
+  }, [tabs, activeTabId, appDefaultCwd, fontFamily, isLoaded]);
 
 
   /** アクティブタブのペインをアクティブにする */
@@ -328,6 +334,11 @@ export function useLayout() {
     setAppDefaultCwd(newCwd);
   }, []);
 
+  /** フォントファミリーを更新 */
+  const updateFontFamily = useCallback((newFont: string) => {
+    setFontFamily(newFont);
+  }, []);
+
   return {
     tabs,
     activeTab,
@@ -337,6 +348,8 @@ export function useLayout() {
     closeTab,
     renameTab,
     updateTabCwd,
+    fontFamily,
+    updateFontFamily,
     layout,
     activePane,
     setActivePane,

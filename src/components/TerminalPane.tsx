@@ -12,6 +12,7 @@ import "@xterm/xterm/css/xterm.css";
 interface TerminalPaneProps {
   pane: PaneNode;
   isActive: boolean;
+  fontFamily: string;
   onFocus: () => void;
 }
 
@@ -68,6 +69,7 @@ const LIGHT_THEME = {
 export function TerminalPane({
   pane,
   isActive,
+  fontFamily,
   onFocus,
 }: TerminalPaneProps) {
   const { resolvedTheme } = useTheme();
@@ -112,7 +114,7 @@ export function TerminalPane({
     if (!containerRef.current) return;
 
     const terminal = new Terminal({
-      fontFamily: '"Cascadia Mono", "JetBrains Mono", "Noto Sans JP", "BIZ UDGothic", "Meiryo", "Yu Gothic", Consolas, monospace',
+      fontFamily: fontFamily,
       fontSize: 14,
       lineHeight: 1.2,
       fontWeight: '500', 
@@ -210,8 +212,16 @@ export function TerminalPane({
       terminalRef.current.refresh(0, terminalRef.current.rows - 1);
     }
   }, [resolvedTheme]);
+  
+  // 3. フォント同期
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.options.fontFamily = fontFamily;
+      refreshTerminal();
+    }
+  }, [fontFamily, refreshTerminal]);
 
-  // 3. フォーカスおよびアクティブ時の同期
+  // 4. フォーカスおよびアクティブ時の同期
   useEffect(() => {
     if (isActive && isTabActive && terminalRef.current) {
       requestAnimationFrame(() => {

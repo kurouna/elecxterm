@@ -10,6 +10,7 @@ interface TabContentProps {
   layout: LayoutNode;
   activePane: string;
   isActive: boolean;
+  fontFamily: string;
   onPaneActivate: (id: string) => void;
   onRatioChange: (path: number[], ratios: number[]) => void;
 }
@@ -18,6 +19,7 @@ export function TabContent({
   layout,
   activePane,
   isActive,
+  fontFamily,
   onPaneActivate,
   onRatioChange,
 }: TabContentProps) {
@@ -33,6 +35,7 @@ export function TabContent({
         <SplitLayout
           node={layout}
           activePane={activePane}
+          fontFamily={fontFamily}
           onPaneActivate={onPaneActivate}
           onRatioChange={onRatioChange}
         />
