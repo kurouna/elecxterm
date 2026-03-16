@@ -20,8 +20,8 @@ export function TabContent({
     <div
       className={`absolute inset-0 p-0.5 transition-all duration-300 ${
         isActive 
-          ? "opacity-100 z-10 translate-y-0 scale-100" 
-          : "opacity-0 z-0 pointer-events-none translate-y-2 scale-[0.99]"
+          ? "opacity-100 z-10 translate-y-0 scale-100 visible" 
+          : "opacity-0 z-0 translate-y-2 scale-[0.99] invisible pointer-events-none"
       }`}
     >
       <SplitLayout
