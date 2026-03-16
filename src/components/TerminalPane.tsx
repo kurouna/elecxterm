@@ -199,14 +199,23 @@ export function TerminalPane({
 
   // タブまたはペインがアクティブになった際のフォーカス制御
   useEffect(() => {
-    if (isActive && isTabActive) {
-      // visibility: visible に切り替わり、ブラウザがフォーカスを許可するまで僅かに待機
-      const timer = setTimeout(() => {
-        if (terminalRef.current) {
-          terminalRef.current.focus();
-        }
-      }, 50); 
-      return () => clearTimeout(timer);
+    if (isActive && isTabActive && terminalRef.current) {
+      let rafId: number;
+      
+      const handleFocus = () => {
+        // Double requestAnimationFrame:
+        // 1つ目で次の描画を待ち、2つ目で描画が完了した（visibility: visible が反映された）直後に実行する
+        rafId = requestAnimationFrame(() => {
+          rafId = requestAnimationFrame(() => {
+            terminalRef.current?.focus();
+          });
+        });
+      };
+
+      handleFocus();
+      return () => {
+        if (rafId) cancelAnimationFrame(rafId);
+      };
     }
   }, [isActive, isTabActive]);
 
