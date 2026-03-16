@@ -1,6 +1,6 @@
 [package]
 name = "elecxterm"
-version = "0.1.0"
+version = "0.0.2"
 description = "Next-generation terminal multiplexer for the elecxzy ecosystem"
 authors = ["shinsaku"]
 edition = "2021"
