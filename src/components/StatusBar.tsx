@@ -32,9 +32,12 @@ export function StatusBar({
       </div>
 
       {/* Right side (Hints) */}
-      <div className="flex items-center gap-8 uppercase tracking-widest font-medium">
+      <div className="flex items-center gap-6 uppercase tracking-widest font-medium">
         <div className="flex gap-4">
-          <span className="flex gap-1.5">
+          <span className="flex gap-2">
+            Tab <span className="text-tx-secondary font-mono">^⇧T/B/F</span>
+          </span>
+          <span className="flex gap-1.5 border-l border-border-dim pl-4">
             CMD <span className="text-tx-secondary font-mono">^⇧D/E</span>
           </span>
           <span className="flex gap-1.5">
@@ -42,16 +45,16 @@ export function StatusBar({
           </span>
         </div>
 
-        <div className="flex gap-5">
+        <div className="flex gap-4 border-l border-border-dim pl-4">
           <span className="flex gap-2">
-            Pane <span className="text-tx-secondary font-mono">^⇧P / N</span>
+            Pane <span className="text-tx-secondary font-mono">^⇧P/N</span>
           </span>
           <span className="flex gap-2">
             Close <span className="text-tx-secondary font-mono">^⇧W</span>
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 border-l border-border-dim pl-4">
           <span>
             Palette{" "}
             <span className="text-tx-secondary px-1 font-mono">^⇧K</span>
