@@ -13,7 +13,6 @@ interface TerminalPaneProps {
   pane: PaneNode;
   isActive: boolean;
   onFocus: () => void;
-  // 以下は store 経由で更新されるようになるが、まだ App.tsx 側で期待されているため残す
   onStatusChange?: (status: PaneStatus) => void;
 }
 
@@ -91,6 +90,27 @@ export function TerminalPane({
     [pane.id, updateStatus, onStatusChange]
   );
 
+  const refreshTerminal = useCallback(() => {
+    if (terminalRef.current && fitAddonRef.current) {
+      try {
+        const dims = fitAddonRef.current.proposeDimensions();
+        if (dims) {
+          // ウィンドウリサイズ時と同じ効果を得るため、
+          // 一旦サイズを1つずらして戻すことで PTY 側に SIGWINCH を強制的に送る
+          const originalCols = dims.cols;
+          const originalRows = dims.rows;
+          
+          terminalRef.current.resize(originalCols + 1, originalRows);
+          terminalRef.current.resize(originalCols, originalRows);
+          
+          fitAddonRef.current.fit();
+        }
+        terminalRef.current.refresh(0, terminalRef.current.rows - 1);
+      } catch {}
+    }
+  }, []);
+
+  // 1. ターミナルの実体の構築
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -112,9 +132,10 @@ export function TerminalPane({
     terminal.loadAddon(fitAddon);
     terminal.open(containerRef.current);
 
+    let webglAddon: WebglAddon | null = null;
     try {
-      const webglAddon = new WebglAddon();
-      webglAddon.onContextLoss(() => webglAddon.dispose());
+      webglAddon = new WebglAddon();
+      webglAddon.onContextLoss(() => webglAddon?.dispose());
       terminal.loadAddon(webglAddon);
     } catch (e) {
       console.warn("WebGL addon failed to load:", e);
@@ -150,14 +171,12 @@ export function TerminalPane({
         handleStatusUpdate("running");
         
         requestAnimationFrame(() => {
-          fitAddon.fit();
-          terminal.refresh(0, terminal.rows - 1);
-          if (isActive && isTabActive) terminal.focus();
+          requestAnimationFrame(refreshTerminal);
         });
 
         terminal.onResize(({ rows, cols }) => ptyBridge.resize(pane.id, rows, cols));
       } catch (e) {
-        console.error("PTY connection failed:", e);
+        console.error("PTY Setup Error:", e);
         handleStatusUpdate("error");
       }
     };
@@ -165,10 +184,10 @@ export function TerminalPane({
     connectPty();
 
     const observer = new ResizeObserver(() => {
-      try { 
-        fitAddon.fit(); 
-        terminal.refresh(0, terminal.rows - 1);
-      } catch { }
+      refreshTerminal();
+      requestAnimationFrame(() => {
+        requestAnimationFrame(refreshTerminal);
+      });
     });
     observer.observe(containerRef.current);
 
@@ -177,11 +196,13 @@ export function TerminalPane({
       unlistenPtyData?.();
       unlistenExit?.();
       dataDisposable.dispose();
+      webglAddon?.dispose();
       terminal.dispose();
       terminalRef.current = null;
     };
   }, [pane.id]);
 
+  // 2. テーマ同期
   useEffect(() => {
     if (terminalRef.current) {
       terminalRef.current.options.theme = resolvedTheme === "dark" ? DARK_THEME : LIGHT_THEME;
@@ -189,22 +210,19 @@ export function TerminalPane({
     }
   }, [resolvedTheme]);
 
+  // 3. フォーカスおよびアクティブ時の同期
   useEffect(() => {
     if (isActive && isTabActive && terminalRef.current) {
-      let rafId: number;
-      const handleFocus = () => {
-        rafId = requestAnimationFrame(() => {
-          rafId = requestAnimationFrame(() => {
-            terminalRef.current?.focus();
-          });
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (terminalRef.current) {
+            terminalRef.current.focus();
+            refreshTerminal();
+          }
         });
-      };
-      handleFocus();
-      return () => {
-        if (rafId) cancelAnimationFrame(rafId);
-      };
+      });
     }
-  }, [isActive, isTabActive]);
+  }, [isActive, isTabActive, refreshTerminal]);
 
   const borderClass = volatileStatus === "error"
     ? "border-border-error shadow-[0_0_10px_rgba(220,38,38,0.3)]"
