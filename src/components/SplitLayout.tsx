@@ -79,10 +79,12 @@ function SplitContainer({
     startPos: number;
     startRatios: number[];
   } | null>(null);
+  const latestRatiosRef = useRef<number[]>(node.ratio);
 
   // node.ratio が外部から変更された場合に同期
   useEffect(() => {
     setRatios(node.ratio);
+    latestRatiosRef.current = node.ratio;
   }, [node.ratio]);
 
   const isHorizontal = node.type === "horizontal";
@@ -92,19 +94,20 @@ function SplitContainer({
       e.preventDefault();
       e.stopPropagation();
 
+      if (!containerRef.current) return;
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const containerSize = isHorizontal ? containerRect.width : containerRect.height;
+
       dragStartRef.current = {
         index,
         startPos: isHorizontal ? e.clientX : e.clientY,
-        startRatios: [...ratios],
+        startRatios: [...latestRatiosRef.current],
       };
 
       const handleMouseMove = (moveEvent: MouseEvent) => {
-        if (!dragStartRef.current || !containerRef.current) return;
+        if (!dragStartRef.current) return;
 
-        const containerRect = containerRef.current.getBoundingClientRect();
-        const containerSize = isHorizontal ? containerRect.width : containerRect.height;
         const currentPos = isHorizontal ? moveEvent.clientX : moveEvent.clientY;
-        
         const delta = (currentPos - dragStartRef.current.startPos) / containerSize;
         const newRatios = [...dragStartRef.current.startRatios];
         const minRatio = 0.05;
@@ -112,26 +115,30 @@ function SplitContainer({
         const left = Math.max(minRatio, newRatios[dragStartRef.current.index] + delta);
         const right = Math.max(minRatio, newRatios[dragStartRef.current.index + 1] - delta);
 
-        // 合計を1に維持するための調整
         const diff = (newRatios[dragStartRef.current.index] + newRatios[dragStartRef.current.index + 1]) - (left + right);
         
         newRatios[dragStartRef.current.index] = left;
         newRatios[dragStartRef.current.index + 1] = right + diff;
         
+        // ローカル状態を更新し、DOMをリサイズさせる
+        // これにより TerminalPane の ResizeObserver がトリガーされ、真っ黒になるのを防ぐ
         setRatios(newRatios);
-        onRatioChange?.(path, newRatios);
+        latestRatiosRef.current = newRatios;
       };
 
       const handleMouseUp = () => {
         dragStartRef.current = null;
         window.removeEventListener("mousemove", handleMouseMove);
         window.removeEventListener("mouseup", handleMouseUp);
+        
+        // ドラッグ終了時に一度だけグローバル状態（Store）へ保存
+        onRatioChange?.(path, latestRatiosRef.current);
       };
 
       window.addEventListener("mousemove", handleMouseMove);
       window.addEventListener("mouseup", handleMouseUp);
     },
-    [isHorizontal, ratios, onRatioChange, path]
+    [isHorizontal, onRatioChange, path]
   );
 
   return (
