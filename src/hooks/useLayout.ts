@@ -31,7 +31,8 @@ function findFirstPane(node: LayoutNode): PaneNode | null {
 }
 
 /** レイアウトとタブの操作フック */
-export function useLayout() {
+export function useLayout(options?: { onNotification?: (msg: string) => void }) {
+  const { onNotification } = options || {};
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string>("");
   const [appDefaultCwd, setAppDefaultCwd] = useState<string | undefined>(undefined);
@@ -67,7 +68,7 @@ export function useLayout() {
   const addTab = useCallback((name?: string, shell?: string, cwd?: string) => {
     // 全体のペイン数制限チェック
     if (countAllPanes(tabs) >= MAX_PANES) {
-      alert(`ペインの最大数 (${MAX_PANES}) に達しました。`);
+      onNotification?.(`ペインの最大数 (${MAX_PANES}) に達しました。`);
       return;
     }
 
@@ -198,7 +199,7 @@ export function useLayout() {
     ) => {
       // 全体のペイン数制限チェック
       if (countAllPanes(tabs) >= MAX_PANES) {
-        alert(`ペインの最大数 (${MAX_PANES}) に達しました。`);
+        onNotification?.(`ペインの最大数 (${MAX_PANES}) に達しました。`);
         return ""; // 分割失敗を示すために空文字列を返すか、エラーをスロー
       }
 

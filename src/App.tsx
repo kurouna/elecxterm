@@ -12,9 +12,12 @@ import { useKeybinds } from "./hooks/useKeybinds";
 import { CommandItem } from "./types";
 import { useTheme } from "./ThemeContext";
 
+import { NotificationOverlay } from "./components/NotificationOverlay";
+
 function App() {
   const { setTheme, resolvedTheme } = useTheme();
   const isFirstRender = useRef(true);
+  const [notification, setNotification] = useState<string | null>(null);
 
   // テーマの準備ができたらウィンドウを表示
   useEffect(() => {
@@ -32,6 +35,7 @@ function App() {
       isFirstRender.current = false;
     }
   }, [resolvedTheme]);
+
   const {
     tabs,
     activeTab,
@@ -52,7 +56,9 @@ function App() {
     lastPane,
     fontFamily,
     updateFontFamily,
-  } = useLayout();
+  } = useLayout({
+    onNotification: (msg) => setNotification(msg)
+  });
 
 
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -184,6 +190,11 @@ function App() {
         placeholder={promptConfig.placeholder}
         defaultValue={promptConfig.defaultValue}
         onSubmit={promptConfig.onSubmit}
+      />
+
+      <NotificationOverlay 
+        message={notification} 
+        onClear={() => setNotification(null)} 
       />
     </div>
   );
