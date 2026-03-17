@@ -10,6 +10,8 @@ use tauri::{AppHandle, Emitter};
 struct PtyInstance {
     writer: Box<dyn Write + Send>,
     _pair: PtyPair,
+    rows: u16,
+    cols: u16,
 }
 
 /// PTYマネージャー: 複数のPTYインスタンスを管理
@@ -130,6 +132,8 @@ impl PtyManager {
             PtyInstance {
                 writer,
                 _pair: pair,
+                rows,
+                cols,
             },
         );
 
@@ -148,12 +152,25 @@ impl PtyManager {
 
     pub fn resize_pty(&mut self, id: &str, rows: u16, cols: u16) -> Result<(), String> {
         if let Some(instance) = self.instances.get_mut(id) {
+            // 現在のサイズと同じ場合は、一旦+1してから戻すことで強制的にSIGWINCH相当の信号を送る
+            if instance.rows == rows && instance.cols == cols {
+                instance._pair.master.resize(PtySize {
+                    rows: rows + 1,
+                    cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                }).map_err(|e| e.to_string())?;
+            }
+
             instance._pair.master.resize(PtySize {
                 rows,
                 cols,
                 pixel_width: 0,
                 pixel_height: 0,
             }).map_err(|e| e.to_string())?;
+
+            instance.rows = rows;
+            instance.cols = cols;
             Ok(())
         } else {
             Err(format!("PTY not found: {}", id))

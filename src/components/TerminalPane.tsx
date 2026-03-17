@@ -92,22 +92,18 @@ export function TerminalPane({
   const refreshTerminal = useCallback(() => {
     if (terminalRef.current && fitAddonRef.current) {
       try {
-        const dims = fitAddonRef.current.proposeDimensions();
-        if (dims) {
-          // ウィンドウリサイズ時と同じ効果を得るため、
-          // 一旦サイズを1つずらして戻すことで PTY 側に SIGWINCH を強制的に送る
-          const originalCols = dims.cols;
-          const originalRows = dims.rows;
-          
-          terminalRef.current.resize(originalCols + 1, originalRows);
-          terminalRef.current.resize(originalCols, originalRows);
-          
-          fitAddonRef.current.fit();
-        }
+        fitAddonRef.current.fit();
+        // バックエンドが同じサイズでも信号を送るようになったため、
+        // 明示的に resize を呼ぶことで PTY 側の redraw を促す
+        ptyBridge.resize(
+          pane.id, 
+          terminalRef.current.rows, 
+          terminalRef.current.cols
+        );
         terminalRef.current.refresh(0, terminalRef.current.rows - 1);
       } catch {}
     }
-  }, []);
+  }, [pane.id]);
 
   // 1. ターミナルの実体の構築
   useEffect(() => {
