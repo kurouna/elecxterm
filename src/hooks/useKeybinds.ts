@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 interface KeybindOptions {
   onCommandPalette: () => void;
@@ -15,8 +15,17 @@ interface KeybindOptions {
 }
 
 export function useKeybinds(options: KeybindOptions) {
+  // options を ref で保持することで、リスナーを張り替えずに最新の関数を参照できるようにする
+  const optionsRef = useRef(options);
+  
+  useEffect(() => {
+    optionsRef.current = options;
+  }, [options]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const opts = optionsRef.current;
+      
       // Block default browser behavior that interferes with terminal or app usage
       const isCtrl = e.ctrlKey;
       const key = e.key.toLowerCase();
@@ -38,57 +47,57 @@ export function useKeybinds(options: KeybindOptions) {
           case "K":
             e.preventDefault();
             e.stopPropagation();
-            options.onCommandPalette();
+            opts.onCommandPalette();
             break;
           case "T":
             e.preventDefault();
-            options.onNewTab();
+            opts.onNewTab();
             break;
           case "ArrowRight":
           case "F":
             e.preventDefault();
             e.stopPropagation();
-            options.onNextTab();
+            opts.onNextTab();
             break;
           case "ArrowLeft":
           case "B":
             e.preventDefault();
             e.stopPropagation();
-            options.onPrevTab();
+            opts.onPrevTab();
             break;
           case "P":
           case "ArrowUp":
             e.preventDefault();
             e.stopPropagation();
-            options.onPrevPane();
+            opts.onPrevPane();
             break;
           case "N":
           case "ArrowDown":
             e.preventDefault();
             e.stopPropagation();
-            options.onNextPane();
+            opts.onNextPane();
             break;
           case "<":
           case ",":
             e.preventDefault();
-            options.onFirstPane();
+            opts.onFirstPane();
             break;
           case ">":
           case ".":
             e.preventDefault();
-            options.onLastPane();
+            opts.onLastPane();
             break;
           case "D":
             e.preventDefault();
-            options.onSplitHorizontal("cmd.exe");
+            opts.onSplitHorizontal("cmd.exe");
             break;
           case "E":
             e.preventDefault();
-            options.onSplitVertical("cmd.exe");
+            opts.onSplitVertical("cmd.exe");
             break;
           case "W":
             e.preventDefault();
-            options.onClosePane();
+            opts.onClosePane();
             break;
         }
       } 
@@ -99,12 +108,12 @@ export function useKeybinds(options: KeybindOptions) {
           case "D":
             e.preventDefault();
             e.stopPropagation();
-            options.onSplitHorizontal("powershell.exe");
+            opts.onSplitHorizontal("powershell.exe");
             break;
           case "E":
             e.preventDefault();
             e.stopPropagation();
-            options.onSplitVertical("powershell.exe");
+            opts.onSplitVertical("powershell.exe");
             break;
         }
       }
@@ -112,5 +121,5 @@ export function useKeybinds(options: KeybindOptions) {
 
     window.addEventListener("keydown", handleKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
-  }, [options]);
+  }, []); // 依存配列を空にして一度だけ登録
 }
