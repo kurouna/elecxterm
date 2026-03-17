@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState, useMemo } from "react";
 import { LayoutNode, PaneNode, Tab } from "../types";
 import { load } from "@tauri-apps/plugin-store";
-import { ptyBridge } from "../pty-bridge";
 
 const STORE_PATH = "elecxterm-settings.json";
 export const MAX_PANES = 15;
@@ -89,13 +88,6 @@ export function useLayout() {
   }, [tabs.length, appDefaultCwd, tabs]);
 
   const closeTab = useCallback((id: string) => {
-    // 1. PTY cleanup
-    const tabToClose = tabs.find(t => t.id === id);
-    if (tabToClose) {
-      const paneIds = getAllPaneIds(tabToClose.layout);
-      paneIds.forEach(pid => ptyBridge.destroy(pid).catch(() => {}));
-    }
-
     const filtered = tabs.filter((t) => t.id !== id);
     
     // 全てのタブが閉じられた場合、新しいタブを作成してアクティブにする
@@ -236,9 +228,6 @@ export function useLayout() {
   /** ペインを閉じる */
   const closePane = useCallback(
     (paneId: string) => {
-      // PTY を明示的に破棄
-      ptyBridge.destroy(paneId).catch(() => {});
-
       const tab = tabs.find(t => t.id === activeTabId);
       if (tab) {
         const paneIds = getAllPaneIds(tab.layout);

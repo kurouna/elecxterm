@@ -123,7 +123,7 @@ export function TerminalPane({
       cursorStyle: "bar",
       cursorWidth: 2,
       allowTransparency: true,
-      scrollback: 10000,
+      scrollback: 2000,
       theme: resolvedTheme === "dark" ? DARK_THEME : LIGHT_THEME,
     });
 
@@ -143,20 +143,31 @@ export function TerminalPane({
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
 
+    let isDisposed = false;
     let unlistenPtyData: (() => void) | null = null;
     let unlistenExit: (() => void) | null = null;
     const dataDisposable = terminal.onData((data) => ptyBridge.write(pane.id, data));
 
     const connectPty = async () => {
       try {
-        unlistenPtyData = await ptyBridge.onData(pane.id, (data) => {
+        const uData = await ptyBridge.onData(pane.id, (data) => {
           terminal.write(data);
         });
+        if (isDisposed) {
+          uData();
+          return;
+        }
+        unlistenPtyData = uData;
 
-        unlistenExit = await ptyBridge.onExit(pane.id, () => {
+        const uExit = await ptyBridge.onExit(pane.id, () => {
           handleStatusUpdate("exited");
           terminal.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
         });
+        if (isDisposed) {
+          uExit();
+          return;
+        }
+        unlistenExit = uExit;
 
         const dims = fitAddon.proposeDimensions();
         await ptyBridge.create({
@@ -167,6 +178,8 @@ export function TerminalPane({
           cols: dims?.cols ?? 80,
         });
 
+        if (isDisposed) return;
+
         const { paneStateStore } = await import("../services/PaneStateStore");
         const currentState = paneStateStore.getPaneState(pane.id);
         if (currentState.status !== "exited") {
@@ -174,27 +187,34 @@ export function TerminalPane({
         }
         
         requestAnimationFrame(() => {
+          if (isDisposed) return;
           requestAnimationFrame(refreshTerminal);
         });
 
-        terminal.onResize(({ rows, cols }) => ptyBridge.resize(pane.id, rows, cols));
+        terminal.onResize(({ rows, cols }) => {
+          if (!isDisposed) ptyBridge.resize(pane.id, rows, cols);
+        });
       } catch (e) {
-        console.error("PTY Setup Error:", e);
-        handleStatusUpdate("error");
+        if (!isDisposed) {
+          console.error("PTY Setup Error:", e);
+          handleStatusUpdate("error");
+        }
       }
     };
 
     connectPty();
 
     const observer = new ResizeObserver(() => {
+      if (isDisposed) return;
       refreshTerminal();
       requestAnimationFrame(() => {
-        requestAnimationFrame(refreshTerminal);
+        if (!isDisposed) requestAnimationFrame(refreshTerminal);
       });
     });
     observer.observe(containerRef.current);
 
     return () => {
+      isDisposed = true;
       observer.disconnect();
       unlistenPtyData?.();
       unlistenExit?.();
@@ -202,8 +222,10 @@ export function TerminalPane({
       webglAddon?.dispose();
       terminal.dispose();
       terminalRef.current = null;
+      // コンポーネントが消える（またはID/設定が変わる）際は PTY も破棄する
+      ptyBridge.destroy(pane.id).catch(() => {});
     };
-  }, [pane.id]);
+  }, [pane.id, pane.cwd, pane.shell]);
 
   // 2. テーマ同期
   useEffect(() => {
