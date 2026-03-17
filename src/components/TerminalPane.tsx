@@ -80,7 +80,7 @@ export function TerminalPane({
   const fitAddonRef = useRef<FitAddon | null>(null);
   
   const { status: volatileStatus } = usePaneState(pane.id);
-  const { updateStatus } = usePaneStateActions();
+  const { updateStatus, deletePane } = usePaneStateActions();
   
   const handleStatusUpdate = useCallback(
     (newStatus: PaneStatus) => {
@@ -220,8 +220,9 @@ export function TerminalPane({
       terminalRef.current = null;
       // コンポーネントが消える（またはID/設定が変わる）際は PTY も破棄する
       ptyBridge.destroy(pane.id).catch(() => {});
+      deletePane(pane.id);
     };
-  }, [pane.id, pane.cwd, pane.shell]);
+  }, [pane.id, pane.cwd, pane.shell, deletePane]);
 
   // 2. テーマ同期
   useEffect(() => {
