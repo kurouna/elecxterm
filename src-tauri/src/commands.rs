@@ -9,10 +9,8 @@ pub fn create_pty(
     state: State<'_, SharedPtyManager>,
     options: PtyCreateOptions,
 ) -> Result<String, String> {
-    let mut manager = state
-        .lock()
-        .map_err(|e| format!("Failed to lock pty manager: {}", e))?;
-    manager.create_pty(&app_handle, options)
+    // SharedPtyManager が Arc 化されたため、全体の Lock は不要になりました。
+    state.create_pty(&app_handle, options).map_err(|e| e.to_string())
 }
 
 /// PTYに入力データを書き込むコマンド
@@ -22,10 +20,7 @@ pub fn write_pty(
     id: String,
     data: Vec<u8>,
 ) -> Result<(), String> {
-    let mut manager = state
-        .lock()
-        .map_err(|e| format!("Failed to lock pty manager: {}", e))?;
-    manager.write_to_pty(&id, &data)
+    state.write_to_pty(&id, &data).map_err(|e| e.to_string())
 }
 
 /// PTYのサイズを変更するコマンド
@@ -34,10 +29,7 @@ pub fn resize_pty(
     state: State<'_, SharedPtyManager>,
     options: PtyResizeOptions,
 ) -> Result<(), String> {
-    let mut manager = state
-        .lock()
-        .map_err(|e| format!("Failed to lock pty manager: {}", e))?;
-    manager.resize_pty(&options.id, options.rows, options.cols)
+    state.resize_pty(&options.id, options.rows, options.cols).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -54,8 +46,5 @@ pub fn destroy_pty(
     state: State<'_, SharedPtyManager>,
     id: String,
 ) -> Result<(), String> {
-    let mut manager = state
-        .lock()
-        .map_err(|e| format!("Failed to lock pty manager: {}", e))?;
-    manager.destroy_pty(&id)
+    state.destroy_pty(&id).map_err(|e| e.to_string())
 }

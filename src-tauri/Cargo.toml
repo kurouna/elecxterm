@@ -22,6 +22,9 @@ serde_json = "1"
 portable-pty = "0.8"
 log = "0.4"
 uuid = { version = "1", features = ["v4"] }
+dashmap = "6.1"
+thiserror = "2.0"
+parking_lot = "0.12"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 # Desktop-specific dependencies can go here
