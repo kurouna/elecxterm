@@ -2,7 +2,7 @@ use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem, MasterPt
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::atomic::{AtomicU16, AtomicBool, Ordering};
 use std::thread;
 use tauri::{AppHandle, Emitter};
 use dashmap::DashMap;
@@ -119,6 +119,11 @@ impl PtyManager {
         let pty_id = options.id.clone();
         let app_handle_clone = app_handle.clone();
         let pty_id_for_thread = pty_id.clone();
+        
+        // 終了イベントを一度だけ送るためのガード
+        let exit_sent = Arc::new(AtomicBool::new(false));
+        let exit_sent_read = Arc::clone(&exit_sent);
+        let exit_sent_wait = Arc::clone(&exit_sent);
 
         // 出力読み取りスレッド
         thread::Builder::new()
@@ -135,7 +140,10 @@ impl PtyManager {
                         Err(_) => break,
                     }
                 }
-                let _ = app_handle_clone.emit(&format!("pty-exit-{}", pty_id_for_thread), ());
+                // 最初に出口に達したスレッドだけが終了イベントを送信する
+                if !exit_sent_read.swap(true, Ordering::SeqCst) {
+                    let _ = app_handle_clone.emit(&format!("pty-exit-{}", pty_id_for_thread), ());
+                }
             })
             .map_err(|e| PtyError::Internal("spawn read thread".into(), e.to_string()))?;
 
@@ -147,7 +155,10 @@ impl PtyManager {
             .spawn(move || {
                 let mut child = child;
                 let _ = child.wait();
-                let _ = app_handle_for_child.emit(&format!("pty-exit-{}", pty_id_for_child), ());
+                // 最初に出口に達したスレッドだけが終了イベントを送信する
+                if !exit_sent_wait.swap(true, Ordering::SeqCst) {
+                    let _ = app_handle_for_child.emit(&format!("pty-exit-{}", pty_id_for_child), ());
+                }
             })
             .map_err(|e| PtyError::Internal("spawn wait thread".into(), e.to_string()))?;
 
