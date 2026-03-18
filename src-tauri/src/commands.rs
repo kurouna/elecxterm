@@ -2,49 +2,48 @@ use crate::pty_manager::{PtyCreateOptions, PtyResizeOptions, SharedPtyManager};
 use tauri::{AppHandle, State};
 
 
-/// PTYインスタンスを新規作成するコマンド
+/// PTYインスタンスを新規作成するコマンド（非同期）
 #[tauri::command]
-pub fn create_pty(
+pub async fn create_pty(
     app_handle: AppHandle,
     state: State<'_, SharedPtyManager>,
     options: PtyCreateOptions,
 ) -> Result<String, String> {
-    // SharedPtyManager が Arc 化されたため、全体の Lock は不要になりました。
-    state.create_pty(&app_handle, options).map_err(|e| e.to_string())
+    state.create_pty(&app_handle, options).await.map_err(|e| e.to_string())
 }
 
-/// PTYに入力データを書き込むコマンド
+/// PTYに入力データを書き込むコマンド（非同期）
 #[tauri::command]
-pub fn write_pty(
+pub async fn write_pty(
     state: State<'_, SharedPtyManager>,
     id: String,
     data: Vec<u8>,
 ) -> Result<(), String> {
-    state.write_to_pty(&id, &data).map_err(|e| e.to_string())
+    state.write_to_pty(&id, data).await.map_err(|e| e.to_string())
 }
 
-/// PTYのサイズを変更するコマンド
+/// PTYのサイズを変更するコマンド（非同期）
 #[tauri::command]
-pub fn resize_pty(
+pub async fn resize_pty(
     state: State<'_, SharedPtyManager>,
     options: PtyResizeOptions,
 ) -> Result<(), String> {
-    state.resize_pty(&options.id, options.rows, options.cols).map_err(|e| e.to_string())
+    state.resize_pty(&options.id, options.rows, options.cols).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn get_cwd() -> Result<String, String> {
+pub async fn get_cwd() -> Result<String, String> {
     std::env::current_dir()
         .map(|p| p.to_string_lossy().into_owned())
         .map_err(|e| format!("Failed to get current directory: {}", e))
 }
 
 
-/// PTYインスタンスを破棄するコマンド
+/// PTYインスタンスを破棄するコマンド（非同期）
 #[tauri::command]
-pub fn destroy_pty(
+pub async fn destroy_pty(
     state: State<'_, SharedPtyManager>,
     id: String,
 ) -> Result<(), String> {
-    state.destroy_pty(&id).map_err(|e| e.to_string())
+    state.destroy_pty(&id).await.map_err(|e| e.to_string())
 }

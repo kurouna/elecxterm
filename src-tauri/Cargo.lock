@@ -866,6 +866,7 @@ dependencies = [
  "tauri-plugin-store",
  "tauri-plugin-window-state",
  "thiserror 2.0.18",
+ "tokio",
  "uuid",
 ]
 
@@ -4168,7 +4169,9 @@ dependencies = [
  "bytes",
  "libc",
  "mio",
+ "parking_lot",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",

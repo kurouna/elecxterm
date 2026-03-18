@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, AtomicBool, Ordering};
-use std::thread;
 use tauri::{AppHandle, Emitter};
 use dashmap::DashMap;
 use thiserror::Error;
@@ -35,7 +34,7 @@ struct PtyInstance {
     cols: AtomicU16,
 }
 
-/// PTYマネージャー: 複数のPTYインスタンスを並列管理
+/// PTYマネージャー: 複数のPTYインスタンスを非同期管理
 pub struct PtyManager {
     // スレッドセーフなマップ。個別のキー操作で全体がロックされない
     instances: DashMap<String, Arc<PtyInstance>>,
@@ -64,8 +63,8 @@ impl PtyManager {
         }
     }
 
-    /// 新しいPTYインスタンスを生成し、出力をフロントエンドにストリームする
-    pub fn create_pty(
+    /// 新しいPTYインスタンスを生成し、出力をフロントエンドに非同期でストリームする
+    pub async fn create_pty(
         &self,
         app_handle: &AppHandle,
         options: PtyCreateOptions,
@@ -75,96 +74,107 @@ impl PtyManager {
             return Ok(options.id);
         }
 
-        let pty_system = NativePtySystem::default();
-        let rows = options.rows.unwrap_or(24);
-        let cols = options.cols.unwrap_or(80);
+        // PTYの初期化
+        let options_clone = options.clone();
+        let (pair, child) = tokio::task::spawn_blocking(move || {
+            let pty_system = NativePtySystem::default();
+            let rows = options_clone.rows.unwrap_or(24);
+            let cols = options_clone.cols.unwrap_or(80);
 
-        let pair = pty_system
-            .openpty(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .map_err(|e| PtyError::Internal("open pty".into(), e.to_string()))?;
+            let pair = pty_system
+                .openpty(PtySize {
+                    rows,
+                    cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                }).map_err(|e| e.to_string())?;
 
-        let shell = options.shell.unwrap_or_else(|| {
-            if cfg!(target_os = "windows") {
-                "cmd.exe".to_string()
-            } else {
-                std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
+            let shell = options_clone.shell.unwrap_or_else(|| {
+                if cfg!(target_os = "windows") {
+                    "cmd.exe".to_string()
+                } else {
+                    std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
+                }
+            });
+
+            let mut cmd = CommandBuilder::new(&shell);
+            if let Some(ref cwd) = options_clone.cwd {
+                cmd.cwd(cwd);
             }
-        });
 
-        let mut cmd = CommandBuilder::new(&shell);
-        if let Some(ref cwd) = options.cwd {
-            cmd.cwd(cwd);
-        }
+            let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+            Ok::<(portable_pty::PtyPair, Box<dyn portable_pty::Child + Send>), String>((pair, child))
+        })
+        .await
+        .map_err(|e| PtyError::Internal("spawn_blocking".into(), e.to_string()))?
+        .map_err(|e| PtyError::Internal("open pty".into(), e))?;
 
-        let child = pair
-            .slave
-            .spawn_command(cmd)
-            .map_err(|e| PtyError::Internal("spawn command".into(), e.to_string()))?;
-
-        let mut reader = pair
-            .master
+        let master = pair.master;
+        let reader = master
             .try_clone_reader()
             .map_err(|e| PtyError::Internal("clone reader".into(), e.to_string()))?;
-
-        let writer = pair
-            .master
+        let writer = master
             .take_writer()
             .map_err(|e| PtyError::Internal("take writer".into(), e.to_string()))?;
 
         let pty_id = options.id.clone();
         let app_handle_clone = app_handle.clone();
-        let pty_id_for_thread = pty_id.clone();
         
-        // 終了イベントを一度だけ送るためのガード
         let exit_sent = Arc::new(AtomicBool::new(false));
         let exit_sent_read = Arc::clone(&exit_sent);
         let exit_sent_wait = Arc::clone(&exit_sent);
 
-        // 出力読み取りスレッド
-        thread::Builder::new()
-            .name(format!("pty-read-{}", pty_id))
-            .spawn(move || {
-                use std::io::Read;
-                let mut buf = [0u8; 8192];
-                loop {
+        // 出力読み取りタスク
+        let pty_id_for_read = pty_id.clone();
+        let app_handle_for_read = app_handle_clone.clone();
+        tokio::spawn(async move {
+            let mut reader = reader;
+            loop {
+                // 読み取りを blocking スレッドで実行
+                let result = tokio::task::spawn_blocking(move || {
+                    use std::io::Read;
+                    let mut buf = [0u8; 8192];
                     match reader.read(&mut buf) {
-                        Ok(0) => break,
-                        Ok(n) => {
-                            let _ = app_handle_clone.emit(&format!("pty-data-{}", pty_id_for_thread), &buf[..n]);
-                        }
-                        Err(_) => break,
+                        Ok(n) => (Ok(n), buf, reader),
+                        Err(e) => (Err(e), buf, reader),
                     }
-                }
-                // 最初に出口に達したスレッドだけが終了イベントを送信する
-                if !exit_sent_read.swap(true, Ordering::SeqCst) {
-                    let _ = app_handle_clone.emit(&format!("pty-exit-{}", pty_id_for_thread), ());
-                }
-            })
-            .map_err(|e| PtyError::Internal("spawn read thread".into(), e.to_string()))?;
+                }).await.expect("spawn_blocking failed");
 
-        // 子プロセス終了監視スレッド
+                let (res, buf, next_reader) = result;
+                reader = next_reader;
+
+                match res {
+                    Ok(0) => break, // EOF
+                    Ok(n) => {
+                        let _ = app_handle_for_read.emit(&format!("pty-data-{}", pty_id_for_read), &buf[..n]);
+                    }
+                    Err(_) => break,
+                }
+            }
+            if !exit_sent_read.swap(true, Ordering::SeqCst) {
+                let _ = app_handle_for_read.emit(&format!("pty-exit-{}", pty_id_for_read), ());
+            }
+        });
+
+        // 子プロセス終了監視タスク
         let app_handle_for_child = app_handle.clone();
         let pty_id_for_child = pty_id.clone();
-        thread::Builder::new()
-            .name(format!("pty-wait-{}", pty_id))
-            .spawn(move || {
+        tokio::spawn(async move {
+            let _ = tokio::task::spawn_blocking(move || {
                 let mut child = child;
                 let _ = child.wait();
-                // 最初に出口に達したスレッドだけが終了イベントを送信する
-                if !exit_sent_wait.swap(true, Ordering::SeqCst) {
-                    let _ = app_handle_for_child.emit(&format!("pty-exit-{}", pty_id_for_child), ());
-                }
-            })
-            .map_err(|e| PtyError::Internal("spawn wait thread".into(), e.to_string()))?;
+            }).await;
+            
+            if !exit_sent_wait.swap(true, Ordering::SeqCst) {
+                let _ = app_handle_for_child.emit(&format!("pty-exit-{}", pty_id_for_child), ());
+            }
+        });
 
+        let rows = options.rows.unwrap_or(24);
+        let cols = options.cols.unwrap_or(80);
         let instance = Arc::new(PtyInstance {
             writer: Mutex::new(writer),
-            master: Mutex::new(pair.master),
+            master: Mutex::new(master),
             rows: AtomicU16::new(rows),
             cols: AtomicU16::new(cols),
         });
@@ -174,55 +184,68 @@ impl PtyManager {
         Ok(pty_id)
     }
 
-    pub fn write_to_pty(&self, id: &str, data: &[u8]) -> Result<(), PtyError> {
-        let instance = self.instances.get(id).ok_or_else(|| PtyError::NotFound(id.to_string()))?;
+    pub async fn write_to_pty(&self, id: &str, data: Vec<u8>) -> Result<(), PtyError> {
+        let instance = {
+            let map_ref = self.instances.get(id).ok_or_else(|| PtyError::NotFound(id.to_string()))?;
+            Arc::clone(map_ref.value())
+        };
         
-        let mut writer = instance.writer.lock();
-        writer.write_all(data).map_err(|e| PtyError::Internal("write data".into(), e.to_string()))?;
-        writer.flush().map_err(|e| PtyError::Internal("flush".into(), e.to_string()))?;
+        tokio::task::spawn_blocking(move || {
+            let mut writer = instance.writer.lock();
+            writer.write_all(&data).map_err(|e| e.to_string())?;
+            writer.flush().map_err(|e| e.to_string())?;
+            Ok::<(), String>(())
+        }).await.map_err(|e| PtyError::Internal("spawn_blocking".into(), e.to_string()))?
+          .map_err(|e| PtyError::Internal("write data".into(), e))?;
+        
         Ok(())
     }
 
-    pub fn resize_pty(&self, id: &str, rows: u16, cols: u16) -> Result<(), PtyError> {
-        let instance = self.instances.get(id).ok_or_else(|| PtyError::NotFound(id.to_string()))?;
+    pub async fn resize_pty(&self, id: &str, rows: u16, cols: u16) -> Result<(), PtyError> {
+        let instance = {
+            let map_ref = self.instances.get(id).ok_or_else(|| PtyError::NotFound(id.to_string()))?;
+            Arc::clone(map_ref.value())
+        };
         
-        // 現在のサイズを原子的に取得
         let current_rows = instance.rows.load(Ordering::SeqCst);
         let current_cols = instance.cols.load(Ordering::SeqCst);
 
-        let master = instance.master.lock();
+        let instance_cloned = Arc::clone(&instance);
+        tokio::task::spawn_blocking(move || {
+            let master = instance_cloned.master.lock();
+            if current_rows == rows && current_cols == cols {
+                master.resize(PtySize {
+                    rows: rows + 1,
+                    cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                }).map_err(|e| e.to_string())?;
+            }
 
-        // 現在のサイズと同じ場合は、一旦+1してから戻すことで強制的にSIGWINCH相当の信号を送る
-        if current_rows == rows && current_cols == cols {
             master.resize(PtySize {
-                rows: rows + 1,
+                rows,
                 cols,
                 pixel_width: 0,
                 pixel_height: 0,
-            }).map_err(|e| PtyError::Internal("force resize".into(), e.to_string()))?;
-        }
+            }).map_err(|e| e.to_string())?;
+            
+            Ok::<(), String>(())
+        }).await.map_err(|e| PtyError::Internal("spawn_blocking".into(), e.to_string()))?
+          .map_err(|e| PtyError::Internal("resize".into(), e))?;
 
-        master.resize(PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        }).map_err(|e| PtyError::Internal("resize".into(), e.to_string()))?;
-
-        // サイズ情報を更新
+        // instance is still available here
         instance.rows.store(rows, Ordering::SeqCst);
         instance.cols.store(cols, Ordering::SeqCst);
         
         Ok(())
     }
 
-    pub fn destroy_pty(&self, id: &str) -> Result<(), PtyError> {
+    pub async fn destroy_pty(&self, id: &str) -> Result<(), PtyError> {
         self.instances.remove(id).ok_or_else(|| PtyError::NotFound(id.to_string()))?;
         Ok(())
     }
 }
 
-// ロックが不要になったため Mutex を除去
 pub type SharedPtyManager = Arc<PtyManager>;
 
 pub fn create_shared_pty_manager() -> SharedPtyManager {
