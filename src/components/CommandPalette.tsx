@@ -76,10 +76,10 @@ export function CommandPalette({
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[12vh]">
+        <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[8vh]">
           {/* Backdrop */}
           <motion.div
-            className="fixed inset-0 bg-black/40 backdrop-blur-[2px]"
+            className="fixed inset-0 bg-black/20 backdrop-blur-[1px]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -88,35 +88,35 @@ export function CommandPalette({
 
           {/* VSCode-like Compact Dialog */}
           <motion.div
-            className="relative w-[90%] max-w-[640px] overflow-hidden rounded-xl border border-border-dim bg-bg-glass shadow-2xl backdrop-blur-3xl"
+            className="relative w-[90%] max-w-[500px] overflow-hidden rounded-lg border border-border-dim bg-bg-glass shadow-2xl backdrop-blur-3xl"
             initial={{ opacity: 0, scale: 0.99, y: -10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.99, y: -5 }}
             transition={{ type: "spring", damping: 25, stiffness: 350 }}
           >
             {/* Search Area */}
-            <div className="flex items-center gap-3 border-b border-border-dim px-5 py-4 bg-bg-main/50">
-              <Search size={18} className="text-accent opacity-80" strokeWidth={2.5} />
+            <div className="flex items-center gap-2.5 border-b border-border-dim px-4 py-2.5 bg-bg-main/50">
+              <Search size={16} className="text-accent opacity-80" strokeWidth={2.5} />
               <input
                 ref={inputRef}
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search commands..."
-                className="flex-1 bg-transparent text-[14px] font-medium text-tx-primary outline-none placeholder:text-tx-muted/40"
+                className="flex-1 bg-transparent text-[13px] font-medium text-tx-primary outline-none placeholder:text-tx-muted/30"
               />
               <button onClick={onClose} className="text-tx-muted hover:text-tx-primary transition-colors p-1">
-                <X size={16} />
+                <X size={14} />
               </button>
             </div>
 
             {/* List Area */}
             <div 
               ref={scrollRef} 
-              className="max-h-[580px] overflow-y-auto p-2 no-scrollbar"
+              className="max-h-[400px] overflow-y-auto p-1.5 no-scrollbar"
             >
               {filteredCommands.length === 0 ? (
-                <div className="py-12 text-center text-tx-muted opacity-50">
+                <div className="py-8 text-center text-tx-muted opacity-50">
                   <p className="text-xs font-medium">No results found</p>
                 </div>
               ) : (
@@ -125,7 +125,7 @@ export function CommandPalette({
                   return (
                     <div
                       key={cmd.id}
-                      className={`group flex items-center h-[46px] rounded-md transition-all duration-75 mb-1 mx-1 px-4 ${
+                      className={`group flex items-center h-[36px] rounded transition-all duration-75 mb-0.5 mx-0.5 px-3 ${
                         isActive 
                           ? "bg-accent text-white shadow-sm" 
                           : "text-tx-secondary hover:bg-accent-dim"
@@ -137,20 +137,20 @@ export function CommandPalette({
                       onMouseEnter={() => setSelectedIndex(index)}
                     >
                       {/* Inner wrapper to handle layout and padding robustly */}
-                      <div className="flex items-center w-full pr-4">
+                      <div className="flex items-center w-full pr-2">
                         {/* Label Side */}
-                        <div className="flex items-center gap-4 flex-1 min-w-0">
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
                           <ChevronRight 
-                            size={14} 
+                            size={12} 
                             className={`flex-shrink-0 transition-colors ${isActive ? "text-white" : "text-tx-muted/50"}`} 
                             strokeWidth={2}
                           />
-                          <div className="flex flex-col truncate">
-                            <span className="text-[14px] font-medium tracking-tight truncate leading-tight">
+                          <div className="flex items-baseline gap-3 truncate">
+                            <span className="text-[12.5px] font-medium tracking-tight truncate leading-none">
                               {cmd.label}
                             </span>
                             {!isActive && (
-                              <span className="text-[10px] uppercase tracking-wider text-tx-muted/60 leading-tight">
+                              <span className="text-[9px] uppercase tracking-wider text-tx-muted/40 leading-none flex-shrink-0">
                                 {cmd.category}
                               </span>
                             )}
@@ -159,7 +159,7 @@ export function CommandPalette({
 
                         {/* Shortcut Side */}
                         {cmd.shortcut && (
-                          <div className={`flex-shrink-0 font-mono text-[11px] ml-8 ${isActive ? "text-white" : "text-tx-muted/60"}`}>
+                          <div className={`flex-shrink-0 font-mono text-[10px] ml-4 ${isActive ? "text-white" : "text-tx-muted/50"}`}>
                             {cmd.shortcut}
                           </div>
                         )}
@@ -171,20 +171,20 @@ export function CommandPalette({
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-center gap-8 border-t border-border-dim bg-bg-main/30 px-4 py-3 opacity-60">
+            <div className="flex items-center justify-center gap-6 border-t border-border-dim bg-bg-main/30 px-4 py-1.5 opacity-60">
               <div className="flex items-center gap-1.5 ">
-                <kbd className="text-[10px] font-mono border border-border-dim px-1.5 rounded bg-bg-surface/50 text-tx-secondary">↑↓</kbd>
-                <span className="text-[9px] uppercase tracking-widest font-medium text-tx-muted">Move</span>
+                <kbd className="text-[9px] font-mono border border-border-dim px-1 rounded bg-bg-surface/50 text-tx-secondary">↑↓</kbd>
+                <span className="text-[8px] uppercase tracking-widest font-medium text-tx-muted">Move</span>
               </div>
               <div className="flex items-center gap-1.5 ">
-                <kbd className="text-[10px] font-mono border border-border-dim px-1.5 rounded bg-bg-surface/50 text-tx-secondary">
-                  <CornerDownLeft size={8} />
+                <kbd className="text-[9px] font-mono border border-border-dim px-1 rounded bg-bg-surface/50 text-tx-secondary">
+                  <CornerDownLeft size={7} />
                 </kbd>
-                <span className="text-[9px] uppercase tracking-widest font-medium text-tx-muted">Select</span>
+                <span className="text-[8px] uppercase tracking-widest font-medium text-tx-muted">Select</span>
               </div>
               <div className="flex items-center gap-1.5 ">
-                <kbd className="text-[10px] font-mono border border-border-dim px-1.5 rounded bg-bg-surface/50 text-tx-secondary">Esc</kbd>
-                <span className="text-[9px] uppercase tracking-widest font-medium text-tx-muted">Close</span>
+                <kbd className="text-[9px] font-mono border border-border-dim px-1 rounded bg-bg-surface/50 text-tx-secondary">Esc</kbd>
+                <span className="text-[8px] uppercase tracking-widest font-medium text-tx-muted">Close</span>
               </div>
             </div>
           </motion.div>
