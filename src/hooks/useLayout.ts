@@ -68,7 +68,7 @@ export function useLayout(options?: { onNotification?: (msg: string) => void }) 
   const addTab = useCallback((name?: string, shell?: string, cwd?: string) => {
     // 全体のペイン数制限チェック
     if (countAllPanes(tabs) >= MAX_PANES) {
-      onNotification?.(`ペインの最大数 (${MAX_PANES}) に達しました。`);
+      onNotification?.(`Maximum number of panes (${MAX_PANES}) reached.`);
       return;
     }
 
@@ -199,7 +199,7 @@ export function useLayout(options?: { onNotification?: (msg: string) => void }) 
     ) => {
       // 全体のペイン数制限チェック
       if (countAllPanes(tabs) >= MAX_PANES) {
-        onNotification?.(`ペインの最大数 (${MAX_PANES}) に達しました。`);
+        onNotification?.(`Maximum number of panes (${MAX_PANES}) reached.`);
         return ""; // 分割失敗を示すために空文字列を返すか、エラーをスロー
       }
 
