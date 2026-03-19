@@ -55,7 +55,7 @@ jobs:
             ## インストール方法
 
             ### Windows
-            - **`-setup.msi`** : Windows インストーラー（推奨）
+            - **`-en-US.msi`** : Windows インストーラー（推奨）
             - **`-setup.exe`** : NSIS インストーラー
             - **`.exe`** : 実行ファイル (インストール不要)
 
