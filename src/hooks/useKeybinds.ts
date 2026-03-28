@@ -12,12 +12,15 @@ interface KeybindOptions {
   onSplitHorizontal: (shell?: string) => void;
   onSplitVertical: (shell?: string) => void;
   onClosePane: () => void;
+  onFontSizeUp?: () => void;
+  onFontSizeDown?: () => void;
+  onFontSizeReset?: () => void;
 }
 
 export function useKeybinds(options: KeybindOptions) {
   // options を ref で保持することで、リスナーを張り替えずに最新の関数を参照できるようにする
   const optionsRef = useRef(options);
-  
+
   useEffect(() => {
     optionsRef.current = options;
   }, [options]);
@@ -25,11 +28,11 @@ export function useKeybinds(options: KeybindOptions) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const opts = optionsRef.current;
-      
+
       // Block default browser behavior that interferes with terminal or app usage
       const isCtrl = e.ctrlKey;
       const key = e.key.toLowerCase();
-      
+
       // Browser shortcuts to block
       if (
         (isCtrl && (key === "r" || key === "p" || key === "f" || key === "g" || key === "s" || key === "j" || key === "h" || key === "o" || key === "n")) ||
@@ -42,7 +45,7 @@ export function useKeybinds(options: KeybindOptions) {
       if (!e.ctrlKey) return;
 
       // Ctrl+Shift
-      if (e.shiftKey) {
+      if (e.shiftKey && !e.altKey) {
         switch (e.key) {
           case "K":
             e.preventDefault();
@@ -100,11 +103,11 @@ export function useKeybinds(options: KeybindOptions) {
             opts.onClosePane();
             break;
         }
-      } 
+      }
+
       // Ctrl+Alt
-      else if (e.altKey) {
-        const key = e.key.toUpperCase();
-        switch (key) {
+      else if (e.altKey && !e.shiftKey) {
+        switch (e.key.toUpperCase()) {
           case "D":
             e.preventDefault();
             e.stopPropagation();
@@ -114,6 +117,25 @@ export function useKeybinds(options: KeybindOptions) {
             e.preventDefault();
             e.stopPropagation();
             opts.onSplitVertical("powershell.exe");
+            break;
+        }
+      }
+
+      // Ctrl のみ（Shift/Alt なし） — フォントサイズ
+      else if (!e.shiftKey && !e.altKey) {
+        switch (e.key) {
+          case "=":
+          case "+":
+            e.preventDefault();
+            opts.onFontSizeUp?.();
+            break;
+          case "-":
+            e.preventDefault();
+            opts.onFontSizeDown?.();
+            break;
+          case "0":
+            e.preventDefault();
+            opts.onFontSizeReset?.();
             break;
         }
       }

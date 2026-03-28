@@ -7,7 +7,7 @@ import { StatusBar } from "./components/StatusBar";
 import { CommandPalette } from "./components/CommandPalette";
 import { Prompt } from "./components/Prompt";
 import { ptyBridge } from "./pty-bridge";
-import { useLayout } from "./hooks/useLayout";
+import { useLayout, DEFAULT_FONT_SIZE } from "./hooks/useLayout";
 import { useKeybinds } from "./hooks/useKeybinds";
 import { CommandItem } from "./types";
 import { useTheme } from "./ThemeContext";
@@ -56,6 +56,8 @@ function App() {
     lastPane,
     fontFamily,
     updateFontFamily,
+    fontSize,
+    updateFontSize,
   } = useLayout({
     onNotification: (msg) => setNotification(msg)
   });
@@ -124,12 +126,18 @@ function App() {
     onSplitHorizontal: (shell) => activePane && splitPane(activePane, "horizontal", { shell }),
     onSplitVertical: (shell) => activePane && splitPane(activePane, "vertical", { shell }),
     onClosePane: () => activePane && closePane(activePane),
+    onFontSizeUp: () => updateFontSize(fontSize + 1),
+    onFontSizeDown: () => updateFontSize(fontSize - 1),
+    onFontSizeReset: () => updateFontSize(DEFAULT_FONT_SIZE),
   });
 
   const commands: CommandItem[] = useMemo(() => [
     { id: "new-tab", label: "Create New Tab", shortcut: "Ctrl+Shift+T", category: "GENERAL", action: addTab },
     { id: "set-cwd", label: "Set Start Directory", category: "TERMINAL", action: openCwdPrompt },
     { id: "set-font", label: "Set Font Family", category: "TERMINAL", action: openFontPrompt },
+    { id: "font-size-up", label: `Font Size: Increase (${fontSize}px)`, shortcut: "Ctrl+=", category: "TERMINAL", action: () => updateFontSize(fontSize + 1) },
+    { id: "font-size-down", label: `Font Size: Decrease (${fontSize}px)`, shortcut: "Ctrl+-", category: "TERMINAL", action: () => updateFontSize(fontSize - 1) },
+    { id: "font-size-reset", label: "Font Size: Reset to Default", shortcut: "Ctrl+0", category: "TERMINAL", action: () => updateFontSize(DEFAULT_FONT_SIZE) },
     { id: "split-h-cmd", label: "Split Vertically (CMD)", shortcut: "Ctrl+Shift+D", category: "LAYOUT", action: () => activePane && splitPane(activePane, "horizontal", { shell: "cmd.exe" }) },
     { id: "split-h-ps", label: "Split Vertically (PowerShell)", shortcut: "Ctrl+Alt+D", category: "LAYOUT", action: () => activePane && splitPane(activePane, "horizontal", { shell: "powershell.exe" }) },
     { id: "split-v-cmd", label: "Split Horizontally (CMD)", shortcut: "Ctrl+Shift+E", category: "LAYOUT", action: () => activePane && splitPane(activePane, "vertical", { shell: "cmd.exe" }) },
@@ -142,7 +150,7 @@ function App() {
     { id: "theme-dark", label: "Theme: Dark (Midnight)", category: "THEME", action: () => setTheme("dark") },
     { id: "theme-light", label: "Theme: Light (Daylight)", category: "THEME", action: () => setTheme("light") },
     { id: "theme-system", label: "Theme: Follow System", category: "THEME", action: () => setTheme("system") },
-  ], [activePane, splitPane, closePane, addTab, nextTab, prevTab, nextPane, prevPane, setTheme, openCwdPrompt, openFontPrompt]);
+  ], [activePane, splitPane, closePane, addTab, nextTab, prevTab, nextPane, prevPane, setTheme, openCwdPrompt, openFontPrompt, fontSize, updateFontSize]);
 
 
   return (
@@ -166,6 +174,7 @@ function App() {
             activePane={tab.activePaneId}
             isActive={tab.id === activeTabId}
             fontFamily={fontFamily}
+            fontSize={fontSize}
             onPaneActivate={setActivePane}
             onRatioChange={updateRatio}
           />

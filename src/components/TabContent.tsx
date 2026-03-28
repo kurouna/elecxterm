@@ -11,6 +11,7 @@ interface TabContentProps {
   activePane: string;
   isActive: boolean;
   fontFamily: string;
+  fontSize: number;
   onPaneActivate: (id: string) => void;
   onRatioChange: (path: number[], ratios: number[]) => void;
 }
@@ -20,6 +21,7 @@ export function TabContent({
   activePane,
   isActive,
   fontFamily,
+  fontSize,
   onPaneActivate,
   onRatioChange,
 }: TabContentProps) {
@@ -27,8 +29,8 @@ export function TabContent({
     <TabVisibilityContext.Provider value={{ isActive }}>
       <div
         className={`absolute inset-0 p-0.5 transition-all duration-300 ${
-          isActive 
-            ? "opacity-100 z-10 translate-y-0 scale-100 visible pointer-events-auto" 
+          isActive
+            ? "opacity-100 z-10 translate-y-0 scale-100 visible pointer-events-auto"
             : "opacity-0 z-0 translate-y-2 scale-[0.99] invisible pointer-events-none"
         }`}
       >
@@ -36,6 +38,7 @@ export function TabContent({
           node={layout}
           activePane={activePane}
           fontFamily={fontFamily}
+          fontSize={fontSize}
           onPaneActivate={onPaneActivate}
           onRatioChange={onRatioChange}
         />

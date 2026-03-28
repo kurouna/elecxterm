@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import { ptyBridge } from "../pty-bridge";
 import { PaneNode, PaneStatus } from "../types";
 import { useTheme } from "../ThemeContext";
@@ -13,6 +14,7 @@ interface TerminalPaneProps {
   pane: PaneNode;
   isActive: boolean;
   fontFamily: string;
+  fontSize: number;
   onFocus: () => void;
 }
 
@@ -70,6 +72,7 @@ export function TerminalPane({
   pane,
   isActive,
   fontFamily,
+  fontSize,
   onFocus,
 }: TerminalPaneProps) {
   const { resolvedTheme } = useTheme();
@@ -111,20 +114,21 @@ export function TerminalPane({
 
     const terminal = new Terminal({
       fontFamily: fontFamily,
-      fontSize: 14,
+      fontSize: fontSize,
       lineHeight: 1.2,
-      fontWeight: '500', 
+      fontWeight: '500',
       fontWeightBold: 'bold',
       cursorBlink: true,
       cursorStyle: "bar",
       cursorWidth: 2,
       allowTransparency: true,
-      scrollback: 2000,
+      scrollback: 5000,
       theme: resolvedTheme === "dark" ? DARK_THEME : LIGHT_THEME,
     });
 
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
+    terminal.loadAddon(new WebLinksAddon());
     terminal.open(containerRef.current);
 
     let webglAddon: WebglAddon | null = null;
@@ -143,6 +147,12 @@ export function TerminalPane({
     let unlistenPtyData: (() => void) | null = null;
     let unlistenExit: (() => void) | null = null;
     const dataDisposable = terminal.onData((data) => ptyBridge.write(pane.id, data));
+
+    // 選択即コピー（copy-on-select）
+    const selectionDisposable = terminal.onSelectionChange(() => {
+      const text = terminal.getSelection();
+      if (text) navigator.clipboard.writeText(text).catch(() => {});
+    });
 
     const connectPty = async () => {
       try {
@@ -215,6 +225,7 @@ export function TerminalPane({
       unlistenPtyData?.();
       unlistenExit?.();
       dataDisposable.dispose();
+      selectionDisposable.dispose();
       webglAddon?.dispose();
       terminal.dispose();
       terminalRef.current = null;
@@ -222,6 +233,7 @@ export function TerminalPane({
       ptyBridge.destroy(pane.id).catch(() => {});
       deletePane(pane.id);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pane.id, pane.cwd, pane.shell, deletePane]);
 
   // 2. テーマ同期
@@ -239,6 +251,14 @@ export function TerminalPane({
       refreshTerminal();
     }
   }, [fontFamily, refreshTerminal]);
+
+  // 3b. フォントサイズ同期
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.options.fontSize = fontSize;
+      refreshTerminal();
+    }
+  }, [fontSize, refreshTerminal]);
 
   // 4. フォーカスおよびアクティブ時の同期
   useEffect(() => {

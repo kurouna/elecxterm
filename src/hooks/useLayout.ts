@@ -5,6 +5,9 @@ import { load } from "@tauri-apps/plugin-store";
 const STORE_PATH = "elecxterm-settings.json";
 export const MAX_PANES = 15;
 export const DEFAULT_FONT_FAMILY = '"Cascadia Mono", "JetBrains Mono", "Noto Sans JP", "BIZ UDGothic", "Meiryo", "Yu Gothic", Consolas, monospace';
+export const DEFAULT_FONT_SIZE = 14;
+export const FONT_SIZE_MIN = 8;
+export const FONT_SIZE_MAX = 28;
 
 // シンプルなID生成
 function generateId(): string {
@@ -37,6 +40,7 @@ export function useLayout(options?: { onNotification?: (msg: string) => void }) 
   const [activeTabId, setActiveTabId] = useState<string>("");
   const [appDefaultCwd, setAppDefaultCwd] = useState<string | undefined>(undefined);
   const [fontFamily, setFontFamily] = useState<string>(DEFAULT_FONT_FAMILY);
+  const [fontSize, setFontSize] = useState<number>(DEFAULT_FONT_SIZE);
   const [isLoaded, setIsLoaded] = useState(false);
 
   /** 全ペインIDを順序通りに取得 */
@@ -152,6 +156,9 @@ export function useLayout(options?: { onNotification?: (msg: string) => void }) 
 
         const savedFontFamily = await store.get<string>("fontFamily");
         if (savedFontFamily) setFontFamily(savedFontFamily);
+
+        const savedFontSize = await store.get<number>("fontSize");
+        if (savedFontSize) setFontSize(savedFontSize);
       } catch (e) {
         console.error("Failed to load session:", e);
         addTab("Main");
@@ -173,6 +180,7 @@ export function useLayout(options?: { onNotification?: (msg: string) => void }) 
         await store.set("activeTabId", activeTabId);
         await store.set("appDefaultCwd", appDefaultCwd);
         await store.set("fontFamily", fontFamily);
+        await store.set("fontSize", fontSize);
         await store.save();
       } catch (e) {
         console.error("Failed to save session:", e);
@@ -182,7 +190,7 @@ export function useLayout(options?: { onNotification?: (msg: string) => void }) 
     // 状態が変更されたら即座に、あるいは短いバッファで保存
     const timer = setTimeout(saveSession, 500);
     return () => clearTimeout(timer);
-  }, [tabs, activeTabId, appDefaultCwd, fontFamily, isLoaded]);
+  }, [tabs, activeTabId, appDefaultCwd, fontFamily, fontSize, isLoaded]);
 
 
   /** アクティブタブのペインをアクティブにする */
@@ -329,6 +337,11 @@ export function useLayout(options?: { onNotification?: (msg: string) => void }) 
     setFontFamily(newFont);
   }, []);
 
+  /** フォントサイズを更新（FONT_SIZE_MIN〜FONT_SIZE_MAXにクランプ） */
+  const updateFontSize = useCallback((newSize: number) => {
+    setFontSize(Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, newSize)));
+  }, []);
+
   return {
     tabs,
     activeTab,
@@ -340,6 +353,8 @@ export function useLayout(options?: { onNotification?: (msg: string) => void }) 
     updateTabCwd,
     fontFamily,
     updateFontFamily,
+    fontSize,
+    updateFontSize,
     layout,
     activePane,
     setActivePane,
