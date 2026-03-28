@@ -104,15 +104,19 @@ export function useKeybinds(options: KeybindOptions) {
             break;
           case "+":
           case "=":
-            // Ctrl+Shift+= (= Ctrl++) でフォントサイズ拡大
+            // Ctrl+Shift+= でフォントサイズ縮小
+            e.preventDefault();
+            opts.onFontSizeDown?.();
+            break;
+          case "~":
+            // Ctrl+Shift+~ でフォントサイズ拡大
             e.preventDefault();
             opts.onFontSizeUp?.();
             break;
-          case "_":
-          case "-":
-            // Ctrl+Shift+- でフォントサイズ縮小
+          case "|":
+            // Ctrl+Shift+| でフォントサイズリセット
             e.preventDefault();
-            opts.onFontSizeDown?.();
+            opts.onFontSizeReset?.();
             break;
         }
       }
