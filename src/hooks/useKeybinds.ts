@@ -102,6 +102,18 @@ export function useKeybinds(options: KeybindOptions) {
             e.preventDefault();
             opts.onClosePane();
             break;
+          case "+":
+          case "=":
+            // Ctrl+Shift+= (= Ctrl++) でフォントサイズ拡大
+            e.preventDefault();
+            opts.onFontSizeUp?.();
+            break;
+          case "_":
+          case "-":
+            // Ctrl+Shift+- でフォントサイズ縮小
+            e.preventDefault();
+            opts.onFontSizeDown?.();
+            break;
         }
       }
 
@@ -121,18 +133,9 @@ export function useKeybinds(options: KeybindOptions) {
         }
       }
 
-      // Ctrl のみ（Shift/Alt なし） — フォントサイズ
+      // Ctrl のみ（Shift/Alt なし） — フォントサイズリセット
       else if (!e.shiftKey && !e.altKey) {
         switch (e.key) {
-          case "=":
-          case "+":
-            e.preventDefault();
-            opts.onFontSizeUp?.();
-            break;
-          case "-":
-            e.preventDefault();
-            opts.onFontSizeDown?.();
-            break;
           case "0":
             e.preventDefault();
             opts.onFontSizeReset?.();

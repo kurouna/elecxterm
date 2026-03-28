@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { ptyBridge } from "../pty-bridge";
 import { PaneNode, PaneStatus } from "../types";
 import { useTheme } from "../ThemeContext";
@@ -128,7 +129,7 @@ export function TerminalPane({
 
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
-    terminal.loadAddon(new WebLinksAddon());
+    terminal.loadAddon(new WebLinksAddon((_event, uri) => { openUrl(uri).catch(() => {}); }));
     terminal.open(containerRef.current);
 
     let webglAddon: WebglAddon | null = null;
