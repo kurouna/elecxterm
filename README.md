@@ -104,6 +104,28 @@ npm run tauri build
 npx tauri icon ./app-icon.svg
 ```
 
+## 🆙 バージョン更新
+
+バージョン番号を変更する際は、以下のファイルを修正し、ロックファイルを更新してください。
+
+### 修正が必要なファイル
+- `package.json`
+- `src-tauri/tauri.conf.json`
+- `src-tauri/Cargo.toml`
+
+### ロックファイルの更新コマンド
+```powershell
+npm install --package-lock-only
+cargo update -p elecxterm --manifest-path src-tauri/Cargo.toml
+```
+
+### コミットメッセージの例
+```text
+chore: bump version to 0.0.x / バージョンを 0.0.x に更新
+
+Updated version to 0.0.x in package.json, tauri.conf.json, and Cargo.toml. / package.json, tauri.conf.json, および Cargo.toml のバージョンを 0.0.x に更新しました。
+```
+
 ## 📂 プロジェクト構造
 
 - `src/`: React フロントエンド (TypeScript, Tailwind CSS, Vite)
