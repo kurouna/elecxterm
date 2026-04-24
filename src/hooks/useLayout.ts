@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useMemo } from "react";
 import { LayoutNode, PaneNode, Tab } from "../types";
 import { load } from "@tauri-apps/plugin-store";
+import { destroyTerminal } from "../services/terminalRegistry";
 
 const STORE_PATH = "elecxterm-settings.json";
 export const MAX_PANES = 15;
@@ -93,8 +94,16 @@ export function useLayout(options?: { onNotification?: (msg: string) => void }) 
   }, [tabs.length, appDefaultCwd, tabs]);
 
   const closeTab = useCallback((id: string) => {
+    // 閉じるタブに属する全ペインの Terminal/PTY を明示的に破棄する。
+    // TerminalPane はアンマウント時には Terminal を破棄しない設計のため、
+    // ここで呼ばないと PTY がリークする。
+    const closingTab = tabs.find(t => t.id === id);
+    if (closingTab) {
+      getAllPaneIds(closingTab.layout).forEach(destroyTerminal);
+    }
+
     const filtered = tabs.filter((t) => t.id !== id);
-    
+
     // 全てのタブが閉じられた場合、新しいタブを作成してアクティブにする
     if (filtered.length === 0) {
       const newTab: Tab = {
@@ -246,6 +255,11 @@ export function useLayout(options?: { onNotification?: (msg: string) => void }) 
           return;
         }
       }
+
+      // レイアウトツリーを更新する前に、閉じるペインの Terminal/PTY を破棄する。
+      // 残ったペインは registry に保持された同じ Terminal を再アタッチするだけなので、
+      // カレントディレクトリやスクロールバックは失われない。
+      destroyTerminal(paneId);
 
       setTabs((prev) => prev.map(tab => {
         if (tab.id !== activeTabId) return tab;
