@@ -1,9 +1,9 @@
 [package]
 name = "elecxterm"
-version = "0.0.5"
+version = "0.0.7"
 description = "Next-generation terminal multiplexer for the elecxzy ecosystem"
 authors = ["elecxzy project"]
-edition = "2021"
+edition = "2026"
 
 [lib]
 name = "elecxterm_lib"
