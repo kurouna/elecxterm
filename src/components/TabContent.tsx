@@ -1,4 +1,4 @@
-import { createContext, useContext } from "react";
+import { createContext, memo, useContext, useMemo } from "react";
 import { SplitLayout } from "./SplitLayout";
 import { LayoutNode } from "../types";
 
@@ -16,7 +16,12 @@ interface TabContentProps {
   onRatioChange: (path: number[], ratios: number[]) => void;
 }
 
-export function TabContent({
+/**
+ * タブのコンテンツ。非アクティブなタブも DOM にマウントしたまま保持して
+ * PTY と xterm の状態を維持するが、`visibility` と `z-index` で瞬時に
+ * 切り替えることでタブ切替時のクロスフェード由来のチラつきを防ぐ。
+ */
+function TabContentComponent({
   layout,
   activePane,
   isActive,
@@ -25,14 +30,21 @@ export function TabContent({
   onPaneActivate,
   onRatioChange,
 }: TabContentProps) {
+  // Context value を isActive が変わった時だけ再生成する。
+  // こうしないと TabContent の再レンダごとに新規オブジェクトが作られ、
+  // useContext 経由で TerminalPane 群が React.memo を貫通して再レンダされる。
+  const visibilityValue = useMemo(() => ({ isActive }), [isActive]);
+
   return (
-    <TabVisibilityContext.Provider value={{ isActive }}>
+    <TabVisibilityContext.Provider value={visibilityValue}>
       <div
-        className={`absolute inset-0 p-0.5 transition-all duration-300 ${
-          isActive
-            ? "opacity-100 z-10 translate-y-0 scale-100 visible pointer-events-auto"
-            : "opacity-0 z-0 translate-y-2 scale-[0.99] invisible pointer-events-none"
-        }`}
+        aria-hidden={!isActive}
+        className="absolute inset-0 p-0.5"
+        style={{
+          visibility: isActive ? "visible" : "hidden",
+          zIndex: isActive ? 10 : 0,
+          pointerEvents: isActive ? "auto" : "none",
+        }}
       >
         <SplitLayout
           node={layout}
@@ -46,3 +58,5 @@ export function TabContent({
     </TabVisibilityContext.Provider>
   );
 }
+
+export const TabContent = memo(TabContentComponent);

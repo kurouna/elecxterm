@@ -1,5 +1,4 @@
-import React, { useCallback, useRef, useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import React, { memo, useCallback, useEffect, useRef, useState } from "react";
 import { LayoutNode } from "../types";
 import { TerminalPane } from "./TerminalPane";
 
@@ -14,7 +13,7 @@ interface SplitLayoutProps {
   depth?: number;
 }
 
-export function SplitLayout({
+function SplitLayoutInner({
   node,
   activePane,
   fontFamily,
@@ -26,20 +25,13 @@ export function SplitLayout({
 }: SplitLayoutProps) {
   if (node.type === "pane") {
     return (
-      <motion.div
-        className="h-full w-full"
-        initial={{ opacity: 0, scale: 0.98 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
-      >
-        <TerminalPane
-          pane={node}
-          isActive={activePane === node.id}
-          fontFamily={fontFamily}
-          fontSize={fontSize}
-          onFocus={() => onPaneActivate(node.id)}
-        />
-      </motion.div>
+      <TerminalPane
+        pane={node}
+        isActive={activePane === node.id}
+        fontFamily={fontFamily}
+        fontSize={fontSize}
+        onActivate={onPaneActivate}
+      />
     );
   }
 
@@ -56,6 +48,8 @@ export function SplitLayout({
     />
   );
 }
+
+export const SplitLayout = memo(SplitLayoutInner);
 
 interface SplitContainerProps {
   node: LayoutNode & { type: "horizontal" | "vertical" };
@@ -121,13 +115,16 @@ function SplitContainer({
         const left = Math.max(minRatio, newRatios[dragStartRef.current.index] + delta);
         const right = Math.max(minRatio, newRatios[dragStartRef.current.index + 1] - delta);
 
-        const diff = (newRatios[dragStartRef.current.index] + newRatios[dragStartRef.current.index + 1]) - (left + right);
-        
+        const diff =
+          newRatios[dragStartRef.current.index] +
+          newRatios[dragStartRef.current.index + 1] -
+          (left + right);
+
         newRatios[dragStartRef.current.index] = left;
         newRatios[dragStartRef.current.index + 1] = right + diff;
-        
-        // ローカル状態を更新し、DOMをリサイズさせる
-        // これにより TerminalPane の ResizeObserver がトリガーされ、真っ黒になるのを防ぐ
+
+        // ローカル状態のみ更新 → ResizeObserver 経由で各 TerminalPane が再 fit。
+        // グローバル (Store) へは mouseup で一度だけ反映する。
         setRatios(newRatios);
         latestRatiosRef.current = newRatios;
       };
@@ -136,8 +133,6 @@ function SplitContainer({
         dragStartRef.current = null;
         window.removeEventListener("mousemove", handleMouseMove);
         window.removeEventListener("mouseup", handleMouseUp);
-        
-        // ドラッグ終了時に一度だけグローバル状態（Store）へ保存
         onRatioChange?.(path, latestRatiosRef.current);
       };
 
@@ -184,7 +179,7 @@ function SplitContainer({
               onMouseDown={(e) => handleMouseDown(index, e)}
             >
               <div
-                className={`absolute inset-0 transition-all duration-300 group-hover:bg-accent-primary/40 ${
+                className={`absolute inset-0 transition-opacity duration-200 group-hover:bg-accent-primary/40 ${
                   isHorizontal
                     ? "left-1/2 w-[1px] -translate-x-1/2"
                     : "top-1/2 h-[1px] -translate-y-1/2"
