@@ -62,7 +62,8 @@ async function createEntry(options: TerminalCreateOptions): Promise<TerminalEntr
   const terminal = new Terminal({
     fontFamily: options.fontFamily,
     fontSize: options.fontSize,
-    lineHeight: 1.2,
+    lineHeight: 1.35,
+    letterSpacing: 0.3,
     fontWeight: "500",
     fontWeightBold: "bold",
     cursorBlink: true,

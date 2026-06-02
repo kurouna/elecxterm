@@ -179,16 +179,11 @@ function SplitContainer({
               onMouseDown={(e) => handleMouseDown(index, e)}
             >
               <div
-                className={`absolute inset-0 transition-opacity duration-200 group-hover:bg-accent-primary/40 ${
+                className={`absolute inset-0 bg-border-dim transition-all duration-200 group-hover:bg-accent group-hover:shadow-[0_0_8px_var(--color-accent-dim)] ${
                   isHorizontal
                     ? "left-1/2 w-[1px] -translate-x-1/2"
                     : "top-1/2 h-[1px] -translate-y-1/2"
                 }`}
-                style={{
-                  backgroundColor: "var(--color-border-active)",
-                  opacity: 0.1,
-                  boxShadow: "0 0 10px var(--color-glow-active)",
-                }}
               />
             </div>
           )}

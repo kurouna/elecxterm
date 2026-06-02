@@ -22,6 +22,9 @@ const DARK_THEME = {
   cursorAccent: "#05070a",
   selectionBackground: "rgba(129, 140, 248, 0.35)",
   selectionForeground: "#ffffff",
+  scrollbarSliderBackground: "rgba(148, 163, 184, 0.25)",
+  scrollbarSliderHoverBackground: "rgba(129, 140, 248, 0.55)",
+  scrollbarSliderActiveBackground: "rgba(129, 140, 248, 0.8)",
   black: "#0f172a",
   red: "#f87171",
   green: "#4ade80",
@@ -47,6 +50,9 @@ const LIGHT_THEME = {
   cursorAccent: "#ffffff",
   selectionBackground: "rgba(37, 99, 235, 0.15)",
   selectionForeground: "#1e293b",
+  scrollbarSliderBackground: "rgba(51, 65, 85, 0.25)",
+  scrollbarSliderHoverBackground: "rgba(37, 99, 235, 0.5)",
+  scrollbarSliderActiveBackground: "rgba(37, 99, 235, 0.75)",
   black: "#0f172a",
   red: "#be123c",
   green: "#15803d",
@@ -203,10 +209,10 @@ function TerminalPaneComponent({
 
   return (
     <div
-      className={`terminal-container relative h-full w-full overflow-hidden rounded-md border transition-[border-color,background-color,box-shadow] duration-200 ${borderClass}`}
+      className={`terminal-container relative h-full w-full overflow-hidden rounded-md border transition-[border-color,box-shadow] duration-200 ${borderClass}`}
       onClick={handleClick}
       style={{
-        backgroundColor: isActive ? "var(--bg-surface)" : "var(--bg-main)",
+        backgroundColor: "var(--bg-main)",
       }}
     >
       <div
@@ -238,7 +244,7 @@ function TerminalPaneComponent({
       <div
         ref={containerRef}
         className="h-full w-full"
-        style={{ background: "transparent" }}
+        style={{ background: "transparent", padding: "6px 8px" }}
       />
     </div>
   );

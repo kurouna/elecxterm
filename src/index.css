@@ -67,11 +67,16 @@ html[data-theme='light'] {
   --tx-muted: #334155;
 }
 
-/* Base Reset & Core Styles */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+/* Base Reset & Core Styles
+   NOTE: 必ず @layer base に入れること。レイヤー外に置くと特異度に関係なく
+   全レイヤー(@layer utilities 含む)より優先され、padding/margin 系の
+   Tailwind スペーシングユーティリティを軒並み 0 に潰してしまう。 */
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
 }
 
 body {
@@ -107,14 +112,54 @@ body {
   background-color: transparent !important;
 }
 
-/* Completely hide all scrollbars */
+/* Modern thin scrollbars.
+   NOTE: WebView2 (Chromium) では `scrollbar-width` を指定すると
+   ::-webkit-scrollbar の width/height が無視され既定の太さに戻る。
+   そのため幅制御は ::-webkit-scrollbar のみで行い、標準プロパティは使わない。
+   見える幅 = 8px - (border 2px * 2) = 4px の角丸サムを中央に配置。 */
 ::-webkit-scrollbar {
-  display: none !important;
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--tx-muted);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--accent);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
-* {
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
+/* スクロールバーを完全に隠したい要素 (タブバー / コマンドパレット) */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* xterm v6 はネイティブ (::-webkit-scrollbar) ではなく、VS Code 由来の
+   オーバーレイスクロールバー (.xterm-scrollable-element > .scrollbar/.slider) を描画する。
+   幅/高さは JS がインライン style (既定 10px) で指定するため、!important で上書きする。
+   スライダーの色は TerminalPane の theme.scrollbarSlider* で制御。 */
+.xterm-scrollable-element > .scrollbar.vertical,
+.xterm-scrollable-element > .scrollbar.vertical > .slider {
+  width: 7px !important;
+}
+.xterm-scrollable-element > .scrollbar.horizontal,
+.xterm-scrollable-element > .scrollbar.horizontal > .slider {
+  height: 7px !important;
+}
+.xterm-scrollable-element > .scrollbar > .slider {
+  border-radius: 9999px !important;
 }
 
 .titlebar-drag {

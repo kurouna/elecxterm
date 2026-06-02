@@ -166,7 +166,7 @@ function App() {
         onTabAdd={() => addTab()}
       />
 
-      <div className="flex-1 overflow-hidden p-0.5 relative">
+      <div className="flex-1 overflow-hidden p-2 relative">
         {tabs.map((tab) => (
           <TabContent
             key={tab.id}
