@@ -155,7 +155,7 @@ function App() {
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden rounded-lg bg-bg-main shadow-2xl transition-colors duration-500">
-      <TitleBar sessionName="elecxterm" />
+      <TitleBar sessionName={`elecxterm@${__APP_VERSION__}`} />
       
       <TabBar
         tabs={tabs}
