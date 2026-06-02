@@ -126,6 +126,75 @@ chore: bump version to 0.0.x / バージョンを 0.0.x に更新
 Updated version to 0.0.x in package.json, tauri.conf.json, and Cargo.toml. / package.json, tauri.conf.json, および Cargo.toml のバージョンを 0.0.x に更新しました。
 ```
 
+## 📦 依存関係の更新
+
+elecxterm は **フロントエンド (npm)** と **Rust バックエンド (Cargo)** の 2 系統の依存関係を持ちます。npm 系コマンドでは Rust 側は更新されないため、**両方** を更新する必要があります。
+
+### 1. フロントエンド (npm)
+
+```powershell
+# semver 範囲内 (^/~) で安全に更新（メジャーは上がらない）
+npm update
+
+# メジャーを含めて最新まで上げる場合（package.json を書き換えるので install が必須）
+npx ncu -u
+npm install
+```
+
+`npm update` はロックファイルのみ更新します。`npx ncu -u` は `package.json` を最新版に書き換えるだけなので、続けて `npm install` を実行して反映してください。
+
+### 2. Rust バックエンド (Cargo)
+
+```powershell
+# semver 範囲内で安全に更新（Cargo.lock のみ）
+cargo update --manifest-path src-tauri/Cargo.toml
+
+# メジャーを含めて最新まで上げる場合（cargo-edit が必要）
+cargo install cargo-edit          # 初回のみ
+cargo upgrade --manifest-path src-tauri/Cargo.toml
+```
+
+### 3. 更新後の検証（必須）
+
+特にメジャー更新では **Tauri v2 / React 19** 周りで破壊的変更が入ることがあります。更新後は必ずビルドと実機起動を確認してください。
+
+```powershell
+npm run build        # TypeScript 型チェック + Vite ビルド
+npm run tauri dev    # 実アプリで起動確認
+```
+
+### 4. コミットメッセージの例
+
+更新の種類に応じて、以下を参考にしてください。`build(deps)` タイプを使用します。
+
+- **依存関係を一括で最新化した場合（npm-check-updates -u / ncu -u）のコミットメッセージ例:**
+  (※ `npm install -g npm-check-updates` でインストールするか、`npx ncu -u` で都度実行します)
+
+```text
+build(deps): update dependencies to latest via ncu / ncu による依存関係の一括最新化
+```
+
+- **semver 範囲内で安全に更新した場合（npm update）のコミットメッセージ例:**
+
+```text
+build(deps): update package-lock.json via npm update / npm update による package-lock.json の更新
+```
+
+- **Rust 依存を更新した場合（cargo update / cargo upgrade）のコミットメッセージ例:**
+
+```text
+build(deps): update Rust dependencies via cargo update / cargo update による Rust 依存関係の更新
+```
+
+- **npm と Rust をまとめて更新した場合のコミットメッセージ例:**
+
+```text
+build(deps): update npm and Rust dependencies to latest / npm および Rust の依存関係を一括で最新化
+
+Updated frontend packages via ncu -u and npm install. / ncu -u と npm install でフロントエンドのパッケージを更新しました。
+Updated src-tauri dependencies via cargo upgrade. / cargo upgrade で src-tauri の依存関係を更新しました。
+```
+
 ## 📂 プロジェクト構造
 
 - `src/`: React フロントエンド (TypeScript, Tailwind CSS, Vite)
