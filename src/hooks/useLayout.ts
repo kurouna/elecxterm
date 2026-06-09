@@ -334,6 +334,11 @@ export function useLayout(options?: { onNotification?: (msg: string) => void }) 
     setTabs(prev => prev.map(t => t.id === id ? { ...t, name: newName } : t));
   }, []);
 
+  /** タブを並び替える（ドラッグ＆ドロップ）。要素数が変わっていれば破棄して安全側に倒す */
+  const reorderTabs = useCallback((next: Tab[]) => {
+    setTabs(prev => (next.length === prev.length ? next : prev));
+  }, []);
+
 
   /** タブの次回の開始ディレクトリを変更（既存のペインは変えない） */
   const updateTabCwd = useCallback((id: string, newCwd: string) => {
@@ -364,6 +369,7 @@ export function useLayout(options?: { onNotification?: (msg: string) => void }) 
     addTab,
     closeTab,
     renameTab,
+    reorderTabs,
     updateTabCwd,
     fontFamily,
     updateFontFamily,

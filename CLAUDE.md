@@ -33,7 +33,7 @@ There is no lint or test runner configured. TypeScript strict mode is enforced v
 
 **IPC Bridge** (`src/pty-bridge.ts`):
 - Thin TypeScript wrapper over Tauri `invoke()` calls for PTY operations: `create`, `write`, `resize`, `destroy`, `getCwd`.
-- Subscribes to Tauri events `pty-data-{id}` and `pty-exit-{id}` for streaming output.
+- PTY output streams over a Tauri `Channel<ArrayBuffer>` passed into `create` (raw-bytes fast path, no JSON array encoding). Process exit is still a Tauri event `pty-exit-{id}`.
 
 **Components**:
 - `TerminalPane.tsx` — xterm.js instance lifecycle (create PTY on mount, attach data listeners, handle resize, cleanup on unmount). Uses WebGL renderer.
@@ -49,7 +49,7 @@ There is no lint or test runner configured. TypeScript strict mode is enforced v
 **PTY Manager** (`pty_manager.rs`):
 - `PtyManager` uses a `DashMap<String, Arc<PtyInstance>>` for lock-free concurrent access.
 - `create_pty()` spawns the shell via `portable-pty`, then launches two Tokio async tasks:
-  1. **Read loop**: reads PTY output → emits `pty-data-{id}` Tauri event.
+  1. **Read loop**: reads PTY output → sends raw bytes via the `Channel<InvokeResponseBody>` (`Raw`) passed to `create_pty`.
   2. **Child monitor**: awaits process exit → emits `pty-exit-{id}`.
 - Writes use `parking_lot::Mutex` on the writer; resize uses `AtomicU16` for rows/cols.
 - `destroy_pty()` removes from DashMap; Arc drop handles deallocation.

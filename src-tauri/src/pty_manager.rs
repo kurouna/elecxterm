@@ -4,6 +4,7 @@ use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter};
+use tauri::ipc::{Channel, InvokeResponseBody};
 use dashmap::DashMap;
 use thiserror::Error;
 use parking_lot::Mutex;
@@ -68,6 +69,7 @@ impl PtyManager {
         &self,
         app_handle: &AppHandle,
         options: PtyCreateOptions,
+        on_data: Channel<InvokeResponseBody>,
     ) -> Result<String, PtyError> {
         // 二重作成防止
         if self.instances.contains_key(&options.id) {
@@ -146,7 +148,9 @@ impl PtyManager {
                 match res {
                     Ok(0) => break, // EOF
                     Ok(n) => {
-                        let _ = app_handle_for_read.emit(&format!("pty-data-{}", pty_id_for_read), &buf[..n]);
+                        // 生バイトを Channel で転送する。Tauri v2 の Raw 経路は
+                        // JSON 配列化を避けるため、高スループット出力でも軽量。
+                        let _ = on_data.send(InvokeResponseBody::Raw(buf[..n].to_vec()));
                     }
                     Err(_) => break,
                 }

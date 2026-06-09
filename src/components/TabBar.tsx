@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, Reorder } from "framer-motion";
 import { Terminal, Edit3, Trash2, X } from "lucide-react";
 import { Tab } from "../types";
 
@@ -9,6 +9,7 @@ interface TabBarProps {
   onTabSelect: (id: string) => void;
   onTabClose: (id: string) => void;
   onTabRename: (id: string, newName: string) => void;
+  onTabReorder: (tabs: Tab[]) => void;
   onTabAdd: () => void;
 }
 
@@ -24,6 +25,7 @@ export function TabBar({
   onTabSelect,
   onTabClose,
   onTabRename,
+  onTabReorder,
   onTabAdd,
 }: TabBarProps) {
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
@@ -88,9 +90,14 @@ export function TabBar({
 
   return (
     <div className="flex items-center h-9 bg-bg-main border-b border-border-dim px-3 transition-colors duration-300">
-      <div 
-        ref={scrollRef} 
+      <Reorder.Group
+        as="div"
+        axis="x"
+        values={tabs}
+        onReorder={onTabReorder}
+        ref={scrollRef}
         onWheel={handleWheel}
+        layoutScroll
         className="flex-1 flex items-center h-full gap-1.5 overflow-x-auto no-scrollbar"
       >
         <AnimatePresence mode="popLayout">
@@ -99,16 +106,20 @@ export function TabBar({
             const isRenaming = renameId === tab.id;
 
             return (
-              <motion.div
+              <Reorder.Item
+                as="div"
+                value={tab}
                 key={tab.id}
                 data-tab-id={tab.id}
                 layout
+                dragListener={!isRenaming}
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }}
+                whileDrag={{ scale: 1.04, zIndex: 50, cursor: "grabbing" }}
                 onClick={() => !isRenaming && onTabSelect(tab.id)}
-                onContextMenu={(e) => handleContextMenu(e, tab.id)}
-                className={`group relative flex-shrink-0 flex items-center h-[30px] px-3 min-w-[124px] max-w-[220px] rounded-t-md cursor-pointer transition-all duration-200 select-none outline-none ${
+                onContextMenu={(e: React.MouseEvent) => handleContextMenu(e, tab.id)}
+                className={`group relative flex-shrink-0 flex items-center h-[30px] px-3 min-w-[124px] max-w-[220px] rounded-t-md cursor-pointer transition-colors duration-200 select-none outline-none ${
                   isActive
                     ? "bg-bg-surface text-tx-primary"
                     : "bg-transparent text-tx-muted hover:bg-bg-elevated/40 hover:text-tx-secondary"
@@ -163,11 +174,11 @@ export function TabBar({
                     <X size={10} strokeWidth={2} />
                   </button>
                 )}
-              </motion.div>
+              </Reorder.Item>
             );
           })}
         </AnimatePresence>
-      </div>
+      </Reorder.Group>
 
       <button
         onClick={onTabAdd}

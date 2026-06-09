@@ -1,15 +1,18 @@
 use crate::pty_manager::{PtyCreateOptions, PtyResizeOptions, SharedPtyManager};
 use tauri::{AppHandle, State};
+use tauri::ipc::{Channel, InvokeResponseBody};
 
 
 /// PTYインスタンスを新規作成するコマンド（非同期）
+/// on_data: PTY 出力を生バイトでフロントへ流す Channel（JSON 化を避ける高速経路）
 #[tauri::command]
 pub async fn create_pty(
     app_handle: AppHandle,
     state: State<'_, SharedPtyManager>,
     options: PtyCreateOptions,
+    on_data: Channel<InvokeResponseBody>,
 ) -> Result<String, String> {
-    state.create_pty(&app_handle, options).await.map_err(|e| e.to_string())
+    state.create_pty(&app_handle, options, on_data).await.map_err(|e| e.to_string())
 }
 
 /// PTYに入力データを書き込むコマンド（非同期）

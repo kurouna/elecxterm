@@ -44,6 +44,7 @@ function App() {
     addTab,
     closeTab,
     renameTab,
+    reorderTabs,
     updateTabCwd,
     activePane,
     setActivePane,
@@ -163,6 +164,7 @@ function App() {
         onTabSelect={setActiveTabId}
         onTabClose={closeTab}
         onTabRename={renameTab}
+        onTabReorder={reorderTabs}
         onTabAdd={() => addTab()}
       />
 

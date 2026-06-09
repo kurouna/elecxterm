@@ -107,22 +107,25 @@ async function createEntry(options: TerminalCreateOptions): Promise<TerminalEntr
   let unlistenExit: (() => void) | null = null;
 
   try {
-    unlistenData = await ptyBridge.onData(options.paneId, (data) => {
-      terminal.write(data);
-    });
     unlistenExit = await ptyBridge.onExit(options.paneId, () => {
       paneStateStore.updateStatus(options.paneId, "exited");
       terminal.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
     });
 
     const dims = fitAddon.proposeDimensions();
-    await ptyBridge.create({
-      id: options.paneId,
-      cwd: options.cwd,
-      shell: options.shell,
-      rows: dims?.rows ?? 24,
-      cols: dims?.cols ?? 80,
-    });
+    // 出力は create に渡したコールバック（Channel 経由）で受信する
+    unlistenData = await ptyBridge.create(
+      {
+        id: options.paneId,
+        cwd: options.cwd,
+        shell: options.shell,
+        rows: dims?.rows ?? 24,
+        cols: dims?.cols ?? 80,
+      },
+      (data) => {
+        terminal.write(data);
+      }
+    );
 
     const currentState = paneStateStore.getPaneState(options.paneId);
     if (currentState.status !== "exited") {
