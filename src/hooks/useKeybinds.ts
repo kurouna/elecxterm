@@ -127,12 +127,12 @@ export function useKeybinds(options: KeybindOptions) {
           case "D":
             e.preventDefault();
             e.stopPropagation();
-            opts.onSplitHorizontal("powershell.exe");
+            opts.onSplitHorizontal("pwsh.exe");
             break;
           case "E":
             e.preventDefault();
             e.stopPropagation();
-            opts.onSplitVertical("powershell.exe");
+            opts.onSplitVertical("pwsh.exe");
             break;
         }
       }
