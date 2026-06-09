@@ -128,7 +128,7 @@ export function TabBar({
                 {isActive && (
                   <motion.div
                     layoutId="active-tab-indicator"
-                    className="absolute top-0 left-0 right-0 h-[1.5px] bg-accent"
+                    className="absolute top-0 left-0 right-0 h-px bg-accent"
                   />
                 )}
 

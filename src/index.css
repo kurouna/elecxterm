@@ -62,8 +62,8 @@ html[data-theme='light'] {
   --accent: #2563eb;
   --accent-dim: rgba(37, 99, 235, 0.1);
 
-  --tx-primary: #000000;
-  --tx-secondary: #000000;
+  --tx-primary: #0f172a;
+  --tx-secondary: #1e293b;
   --tx-muted: #334155;
 }
 

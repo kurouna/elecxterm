@@ -63,13 +63,16 @@ async function createEntry(options: TerminalCreateOptions): Promise<TerminalEntr
     fontFamily: options.fontFamily,
     fontSize: options.fontSize,
     lineHeight: 1.35,
-    letterSpacing: 0.3,
+    // 小数の letterSpacing はグリフがサブピクセル位置に置かれ滲む原因になるため整数(0)にする
+    letterSpacing: 0,
     fontWeight: "500",
     fontWeightBold: "bold",
     cursorBlink: true,
     cursorStyle: "bar",
     cursorWidth: 2,
-    allowTransparency: true,
+    // 透明キャンバスへのアルファ合成はアンチエイリアス縁にハロー(滲み)を生む。
+    // テーマ背景は --bg-main と一致するため、不透明描画にしても見た目は変わらず文字が締まる。
+    allowTransparency: false,
     scrollback: 5000,
     theme: options.theme,
   });
