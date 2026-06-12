@@ -6,6 +6,14 @@ import { listen, UnlistenFn } from "@tauri-apps/api/event";
  */
 class PtyBridge {
   /**
+   * ペインごとの書き込みチェーン。Tauri の async コマンドは並行実行されるため、
+   * 連続する write の到達順序は IPC 層では保証されない。xterm.js は送信順序が
+   * 保証されたトランスポートを前提とするので、ここで Promise チェーンにより
+   * 直列化して順序を保証する（IME の連続確定などで顕在化する）。
+   */
+  private writeChains = new Map<string, Promise<void>>();
+
+  /**
    * 新しいPTYを作成（Idempotent: 既に存在すれば何もしない）。
    * 出力は Tauri の Channel（生バイト経路）で受け取る。`onData` には
    * ArrayBuffer が届くため Uint8Array に変換して渡す。
@@ -35,10 +43,19 @@ class PtyBridge {
     };
   }
 
-  /** PTYに入力を書き込む */
+  /** PTYに入力を書き込む（同一ペインへの書き込みは直列化される） */
   async write(id: string, data: string): Promise<void> {
     const bytes = new TextEncoder().encode(data);
-    await invoke("write_pty", { id, data: bytes });
+    const prev = this.writeChains.get(id) ?? Promise.resolve();
+    const next = prev.then(() => invoke<void>("write_pty", { id, data: bytes }));
+    // 失敗してもチェーンを止めず、痕跡だけ残す（呼び出し元には next で伝播する）
+    this.writeChains.set(
+      id,
+      next.catch((e) => {
+        console.warn(`write_pty(${id}) failed:`, e);
+      })
+    );
+    return next;
   }
 
   /** PTYのサイズを変更 */
@@ -48,6 +65,7 @@ class PtyBridge {
 
   /** PTYを破棄する */
   async destroy(id: string): Promise<void> {
+    this.writeChains.delete(id);
     await invoke("destroy_pty", { id });
   }
 
