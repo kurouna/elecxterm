@@ -46,6 +46,25 @@ export function useKeybinds(options: KeybindOptions) {
 
       // Ctrl+Shift
       if (e.shiftKey && !e.altKey) {
+        // フォントサイズは e.code（物理キー位置）で判定する。配列・Shift の
+        // 文字変換に依存しないため、JIS でも US でも「-キー = 縮小 /
+        // その右隣キー（JIS: ^ / US: =）= 拡大」になる。
+        switch (e.code) {
+          case "Minus": // JIS: -キー / US: -キー
+            e.preventDefault();
+            opts.onFontSizeDown?.();
+            return;
+          case "Equal": // JIS: ^キー / US: =(+)キー
+            e.preventDefault();
+            opts.onFontSizeUp?.();
+            return;
+          case "IntlYen": // JIS: ¥(|)キー
+          case "Backslash": // US: \(|)キー
+            e.preventDefault();
+            opts.onFontSizeReset?.();
+            return;
+        }
+
         switch (e.key) {
           case "K":
             e.preventDefault();
@@ -101,22 +120,6 @@ export function useKeybinds(options: KeybindOptions) {
           case "W":
             e.preventDefault();
             opts.onClosePane();
-            break;
-          case "+":
-          case "=":
-            // Ctrl+Shift+= でフォントサイズ縮小
-            e.preventDefault();
-            opts.onFontSizeDown?.();
-            break;
-          case "~":
-            // Ctrl+Shift+~ でフォントサイズ拡大
-            e.preventDefault();
-            opts.onFontSizeUp?.();
-            break;
-          case "|":
-            // Ctrl+Shift+| でフォントサイズリセット
-            e.preventDefault();
-            opts.onFontSizeReset?.();
             break;
         }
       }

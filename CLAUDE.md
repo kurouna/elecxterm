@@ -15,6 +15,13 @@ npm run build        # TypeScript type-check + Vite bundle
 npm run tauri build  # Produce release installer (.msi / .exe)
 ```
 
+On this machine, `cargo` may fail to find the MSVC toolchain. Use the wrapper scripts that set `PATH`/`INCLUDE`/`LIB` for VS 2026 + Windows SDK before building:
+
+```powershell
+./dev.ps1        # env setup + npm run tauri dev
+./build_fix.ps1  # env setup + cargo build (in src-tauri)
+```
+
 There is no lint or test runner configured. TypeScript strict mode is enforced via `tsconfig.json`.
 
 ## Architecture
@@ -26,23 +33,26 @@ There is no lint or test runner configured. TypeScript strict mode is enforced v
 - A `Tab` holds a `LayoutNode` tree + active pane ID + initial cwd.
 - A `Session` holds multiple `Tab`s.
 
-**State Management** (`src/hooks/useLayout.ts`):
-- Single hook owns all tabs, active tab, and global settings.
-- Persists to `elecxterm-settings.json` via Tauri plugin store (500ms debounce on change).
-- Hard limit of **15 panes** across all tabs.
+**Two-tier state management** — persistent layout state lives in React; terminal instances and volatile per-pane state live outside React. This split is deliberate: layout changes remount components, and terminals must survive that.
+
+1. **`src/hooks/useLayout.ts`** — single hook owning all tabs, active tab, and global settings. Persists to `elecxterm-settings.json` via Tauri plugin store (500ms debounce). Hard limit of **15 panes** across all tabs.
+2. **`src/services/terminalRegistry.ts`** — owns xterm.js `Terminal` + PTY lifecycle in a module-level Map keyed by pane ID. Each entry has a stable `rootEl` div; when split/close rebuilds the layout and `TerminalPane` remounts, it re-attaches the same `rootEl` instead of recreating the terminal, preserving scrollback and cwd. `destroyTerminal()` is the only place that disposes a terminal and its PTY.
+3. **`src/services/PaneStateStore.ts`** — volatile pane state (run status) in a pub/sub store outside React, so frequent status updates don't re-render the whole tabs tree. Consumed via `src/hooks/usePaneState.ts` (per-pane and all-statuses subscriptions).
 
 **IPC Bridge** (`src/pty-bridge.ts`):
 - Thin TypeScript wrapper over Tauri `invoke()` calls for PTY operations: `create`, `write`, `resize`, `destroy`, `getCwd`.
 - PTY output streams over a Tauri `Channel<ArrayBuffer>` passed into `create` (raw-bytes fast path, no JSON array encoding). Process exit is still a Tauri event `pty-exit-{id}`.
 
 **Components**:
-- `TerminalPane.tsx` — xterm.js instance lifecycle (create PTY on mount, attach data listeners, handle resize, cleanup on unmount). Uses WebGL renderer.
-- `SplitLayout.tsx` — Recursively renders `LayoutNode` tree. Handles drag-resize handles that update ratios. Uses Framer Motion for animations.
-- `CommandPalette.tsx` — Opened with `Ctrl+Shift+K`.
+- `TerminalPane.tsx` — thin host for a registry terminal entry: appends `rootEl`, handles fit/resize and theme/font updates. Does NOT own the terminal lifecycle (see terminalRegistry above).
+- `SplitLayout.tsx` — recursively renders the `LayoutNode` tree. Handles drag-resize handles that update ratios. Uses Framer Motion for animations.
+- `CommandPalette.tsx` — opened with `Ctrl+Shift+K`.
+- `src/hooks/useKeybinds.ts` — global keyboard shortcuts (Ctrl+Shift+… for tabs/panes/splits, font size) on a single window listener; also `preventDefault`s browser shortcuts (Ctrl+R/P/F/…, F5) that would interfere with terminal use.
 
 **Theme System** (`src/ThemeContext.tsx`):
 - Supports `dark / light / system`. Stored in `localStorage["elecxterm-theme"]`.
 - Applies `data-theme` attribute to `<html>`. CSS variables defined in `src/index.css` using Tailwind v4 `@theme`.
+- xterm colors are separate objects in `TerminalPane.tsx` (`DARK_THEME` / `LIGHT_THEME`) and must be kept in sync with the CSS variables manually.
 
 ### Backend (`src-tauri/src/`)
 
@@ -58,8 +68,9 @@ There is no lint or test runner configured. TypeScript strict mode is enforced v
 
 ## Key Constraints
 
-- **Windows primary target**: Shell defaults to CMD/PowerShell. PTY creation must handle Windows-specific paths.
+- **Windows primary target**: Shell defaults to CMD/PowerShell (PowerShell panes use `pwsh`, PowerShell 7). PTY creation must handle Windows-specific paths.
 - **No decorations window**: The app window is transparent and frameless (`tauri.conf.json`). `TitleBar.tsx` provides custom window chrome.
 - **CSP is disabled** (`"security": { "csp": null }`) — avoid adding external script sources.
 - **Tauri v2 API**: Use `@tauri-apps/api/core` for `invoke()`, `@tauri-apps/api/event` for `listen()`. Tauri v1 APIs are incompatible.
-- **Tailwind v4**: Uses `@theme` directive and CSS variables rather than `tailwind.config.js`. Class names follow v4 conventions.
+- **Tailwind v4**: Uses `@theme` directive and CSS variables rather than `tailwind.config.js`. Class names follow v4 conventions. Keep bare `*` resets inside `@layer base`, or they override padding/margin utilities.
+- **Text rendering**: xterm is configured with `allowTransparency: false` and integer `letterSpacing` in `terminalRegistry.ts` to avoid blurry glyphs on the transparent window — don't revert these for visual tweaks.

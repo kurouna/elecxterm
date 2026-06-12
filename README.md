@@ -59,6 +59,9 @@
 | `Ctrl+Shift+P / ↑` | 前のペインへ移動 |
 | `Ctrl+Shift+<` | 先頭のペインへ移動 |
 | `Ctrl+Shift+>` | 最後のペインへ移動 |
+| `Ctrl+Shift+^` (US配列: `Ctrl+Shift+=`) | フォントサイズを拡大 |
+| `Ctrl+Shift+-` | フォントサイズを縮小 |
+| `Ctrl+0` または `Ctrl+Shift+¥` | フォントサイズをリセット |
 
 ## 🛠️ 開発とビルド
 
