@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useCallback } from "react";
+import { memo, useEffect, useRef, useCallback, useState } from "react";
 import { ptyBridge } from "../pty-bridge";
 import { PaneNode } from "../types";
 import { useTheme } from "../ThemeContext";
@@ -86,6 +86,9 @@ function TerminalPaneComponent({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const entryRef = useRef<TerminalEntry | null>(null);
+  // getOrCreateTerminal は非同期（PTY 生成 IPC を含む）なので、マウント直後は
+  // entryRef が null。フォーカス effect に完了を伝えるためのフラグ。
+  const [entryReady, setEntryReady] = useState(false);
 
   const { status: volatileStatus } = usePaneState(pane.id);
 
@@ -129,6 +132,7 @@ function TerminalPaneComponent({
         if (cancelled) return;
         entryRef.current = entry;
         host.appendChild(entry.rootEl);
+        setEntryReady(true);
         // 再アタッチ直後はホストのサイズが変わっている可能性があるので一度 fit
         requestAnimationFrame(() => {
           if (!cancelled) fitAndResize();
@@ -143,6 +147,7 @@ function TerminalPaneComponent({
       // Terminal は破棄せず DOM から切り離すだけ。破棄は closePane/closeTab が行う。
       entryRef.current?.rootEl.remove();
       entryRef.current = null;
+      setEntryReady(false);
     };
     // pane.id 以外のプロパティは初回生成時にだけ反映。以降は個別 effect で更新する
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -171,14 +176,17 @@ function TerminalPaneComponent({
     fitAndResize();
   }, [fontSize, fitAndResize]);
 
-  // 5. アクティブペイン & アクティブタブのときのみフォーカス
+  // 5. アクティブペイン & アクティブタブのときのみフォーカス。
+  //    新規タブ/ペインでは Terminal 生成（非同期）完了前に発火しても
+  //    entryRef が null で空振りするため、entryReady も依存に含めて
+  //    生成完了時に再実行させる。
   useEffect(() => {
-    if (!isActive || !isTabActive) return;
+    if (!isActive || !isTabActive || !entryReady) return;
     const raf = requestAnimationFrame(() => {
       entryRef.current?.terminal.focus();
     });
     return () => cancelAnimationFrame(raf);
-  }, [isActive, isTabActive]);
+  }, [isActive, isTabActive, entryReady]);
 
   // 6. ResizeObserver — コンテナ寸法が落ち着いたタイミングで一度だけ fit
   useEffect(() => {
