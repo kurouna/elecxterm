@@ -3,7 +3,7 @@
   "description": "Next-generation terminal manager",
   "author": "elecxzy project",
   "private": true,
-  "version": "0.0.12",
+  "version": "0.0.13",
   "type": "module",
   "scripts": {
     "dev": "vite",
