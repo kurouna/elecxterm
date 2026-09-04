@@ -3,16 +3,24 @@ import { useAllPaneStatuses } from "../hooks/usePaneState";
 interface StatusBarProps {
   activeTabNumber: number;
   totalTabs: number;
+  /** 全タブのペイン総数 */
+  totalPanes: number;
+  /** 同時に開けるペインの上限 */
+  maxPanes: number;
 }
 
 export function StatusBar({
   activeTabNumber,
   totalTabs,
+  totalPanes,
+  maxPanes,
 }: StatusBarProps) {
   const paneStatuses = useAllPaneStatuses();
   const runningCount = Object.values(paneStatuses).filter(
     (s) => s === "running"
   ).length;
+  // 上限が近いことを事前に知らせる（超えてから通知されるより親切）
+  const isNearLimit = totalPanes >= maxPanes - 2;
 
   return (
     <div className="h-7 flex-shrink-0 bg-bg-main flex items-center justify-between px-4 text-[9px] text-tx-muted border-t border-border-dim select-none transition-colors duration-300">
@@ -28,6 +36,15 @@ export function StatusBar({
         <span className="text-[8px] opacity-20 text-tx-muted">|</span>
         <span className="opacity-80 uppercase tracking-tighter">
           Tab: {activeTabNumber} / {totalTabs}
+        </span>
+        <span className="text-[8px] opacity-20 text-tx-muted">|</span>
+        <span
+          className={`uppercase tracking-tighter ${
+            isNearLimit ? "text-amber-400 opacity-100" : "opacity-80"
+          }`}
+          title={`Panes in use across all tabs (max ${maxPanes})`}
+        >
+          Panes: {totalPanes} / {maxPanes}
         </span>
       </div>
 

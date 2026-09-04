@@ -41,6 +41,9 @@ export function CommandPalette({
   useEffect(() => {
     if (!isOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
+      // IME 変換中のキーはパレット操作として扱わない
+      // （日本語入力の確定 Enter でコマンドが実行されてしまうのを防ぐ）
+      if (e.isComposing || e.keyCode === 229) return;
       if (["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(e.key)) {
         e.stopPropagation();
       }

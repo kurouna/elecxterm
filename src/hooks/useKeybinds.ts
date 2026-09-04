@@ -27,6 +27,10 @@ export function useKeybinds(options: KeybindOptions) {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // IME 変換中のキーはショートカットとして解釈しない。
+      // 日本語入力中に Ctrl+... 相当のイベントが流れてくることがあるため。
+      if (e.isComposing || e.keyCode === 229) return;
+
       const opts = optionsRef.current;
 
       // Block default browser behavior that interferes with terminal or app usage

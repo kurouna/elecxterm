@@ -1,10 +1,16 @@
 import { memo, useEffect, useRef, useCallback, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { ptyBridge } from "../pty-bridge";
 import { PaneNode } from "../types";
 import { useTheme } from "../ThemeContext";
 import { usePaneState } from "../hooks/usePaneState";
 import { useTabVisibility } from "./TabContent";
-import { getOrCreateTerminal, TerminalEntry } from "../services/terminalRegistry";
+import {
+  applyAppearance,
+  getOrCreateTerminal,
+  TerminalDestroyedError,
+  TerminalEntry,
+} from "../services/terminalRegistry";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalPaneProps {
@@ -78,11 +84,16 @@ function TerminalPaneComponent({
   fontSize,
   onActivate,
 }: TerminalPaneProps) {
-  const handleClick = useCallback(() => {
-    onActivate(pane.id);
-  }, [onActivate, pane.id]);
   const { resolvedTheme } = useTheme();
   const { isActive: isTabActive } = useTabVisibility();
+  const theme = resolvedTheme === "dark" ? DARK_THEME : LIGHT_THEME;
+
+  // click ではなく pointerdown で切り替える。ドラッグ選択を始めた瞬間に
+  // そのペインがアクティブになり、選択のためのドラッグが終わるまで
+  // フォーカス枠が動かない、という違和感を防ぐ。
+  const handlePointerDown = useCallback(() => {
+    onActivate(pane.id);
+  }, [onActivate, pane.id]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const entryRef = useRef<TerminalEntry | null>(null);
@@ -126,7 +137,7 @@ function TerminalPaneComponent({
       shell: pane.shell,
       fontFamily,
       fontSize,
-      theme: resolvedTheme === "dark" ? DARK_THEME : LIGHT_THEME,
+      theme,
     })
       .then((entry) => {
         if (cancelled) return;
@@ -139,7 +150,9 @@ function TerminalPaneComponent({
         });
       })
       .catch((e) => {
-        if (!cancelled) console.error("Terminal setup error:", e);
+        // 生成中にペインが閉じられた場合は正常なキャンセル
+        if (cancelled || e instanceof TerminalDestroyedError) return;
+        console.error("Terminal setup error:", e);
       });
 
     return () => {
@@ -153,28 +166,19 @@ function TerminalPaneComponent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pane.id]);
 
-  // 2. テーマ同期 — options 代入のみ。xterm が次の描画サイクルで反映する。
+  // 2. 見た目（テーマ・フォント）の同期。
+  //    entryReady を依存に含めるのは、Terminal 生成（非同期）の最中に
+  //    テーマやフォントが切り替わった場合の取りこぼしを防ぐため。
+  //    applyAppearance は実際に変化した項目だけを代入するので、
+  //    ペイン再アタッチのたびに無駄な再描画（WebGL の一瞬のクリア）は起きない。
+  //    文字寸法が変わったときだけ fit する。
   useEffect(() => {
     const entry = entryRef.current;
     if (!entry) return;
-    entry.terminal.options.theme = resolvedTheme === "dark" ? DARK_THEME : LIGHT_THEME;
-  }, [resolvedTheme]);
-
-  // 3. フォントファミリー同期 — 文字幅が変わるので fit が必要
-  useEffect(() => {
-    const entry = entryRef.current;
-    if (!entry) return;
-    entry.terminal.options.fontFamily = fontFamily;
-    fitAndResize();
-  }, [fontFamily, fitAndResize]);
-
-  // 4. フォントサイズ同期
-  useEffect(() => {
-    const entry = entryRef.current;
-    if (!entry) return;
-    entry.terminal.options.fontSize = fontSize;
-    fitAndResize();
-  }, [fontSize, fitAndResize]);
+    if (applyAppearance(entry, { fontFamily, fontSize, theme })) {
+      fitAndResize();
+    }
+  }, [fontFamily, fontSize, theme, entryReady, fitAndResize]);
 
   // 5. アクティブペイン & アクティブタブのときのみフォーカス。
   //    新規タブ/ペインでは Terminal 生成（非同期）完了前に発火しても
@@ -208,6 +212,33 @@ function TerminalPaneComponent({
     };
   }, [fitAndResize]);
 
+  // 7. 右クリックでペースト（多くのターミナルエミュレータ共通の作法）。
+  //    選択中は「選択のコピー」が優先されるため、ペーストは選択が無いときだけ行う。
+  const handleContextMenu = useCallback(
+    async (e: ReactMouseEvent) => {
+      e.preventDefault();
+      const entry = entryRef.current;
+      if (!entry) return;
+
+      const selection = entry.terminal.getSelection();
+      if (selection) {
+        await navigator.clipboard.writeText(selection).catch(() => {});
+        entry.terminal.clearSelection();
+        return;
+      }
+
+      try {
+        const text = await navigator.clipboard.readText();
+        // ptyBridge.write に直接流さず terminal.paste を使う。
+        // bracketed paste mode の制御シーケンス付与を xterm に任せられる。
+        if (text) entry.terminal.paste(text);
+      } catch {
+        // クリップボード権限が無い環境では黙って無視する
+      }
+    },
+    []
+  );
+
   const borderClass =
     volatileStatus === "error"
       ? "border-border-error shadow-[0_0_10px_rgba(220,38,38,0.3)]"
@@ -218,7 +249,12 @@ function TerminalPaneComponent({
   return (
     <div
       className={`terminal-container relative h-full w-full overflow-hidden rounded-md border transition-[border-color,box-shadow] duration-200 ${borderClass}`}
-      onClick={handleClick}
+      onPointerDown={handlePointerDown}
+      onContextMenu={handleContextMenu}
+      role="group"
+      aria-label={`Terminal pane (${volatileStatus})`}
+      data-pane-id={pane.id}
+      data-active={isActive || undefined}
       style={{
         backgroundColor: "var(--bg-main)",
       }}

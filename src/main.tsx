@@ -4,11 +4,14 @@ import App from "./App";
 import "./index.css";
 
 import { ThemeProvider } from "./ThemeContext";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <ThemeProvider>
-      <App />
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <App />
+      </ThemeProvider>
+    </ErrorBoundary>
   </React.StrictMode>
 );

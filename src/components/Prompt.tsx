@@ -34,6 +34,8 @@ export function Prompt({
   }, [isOpen, defaultValue]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // IME 変換確定の Enter を送信として扱わない（日本語入力での誤送信防止）
+    if (e.nativeEvent.isComposing) return;
     if (e.key === "Enter") {
       e.preventDefault();
       onSubmit(value);

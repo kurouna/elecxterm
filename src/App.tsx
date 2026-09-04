@@ -7,7 +7,7 @@ import { StatusBar } from "./components/StatusBar";
 import { CommandPalette } from "./components/CommandPalette";
 import { Prompt } from "./components/Prompt";
 import { ptyBridge } from "./pty-bridge";
-import { useLayout, DEFAULT_FONT_SIZE } from "./hooks/useLayout";
+import { useLayout, DEFAULT_FONT_SIZE, MAX_PANES } from "./hooks/useLayout";
 import { useKeybinds } from "./hooks/useKeybinds";
 import { CommandItem } from "./types";
 import { useTheme } from "./ThemeContext";
@@ -18,6 +18,12 @@ function App() {
   const { setTheme, resolvedTheme } = useTheme();
   const isFirstRender = useRef(true);
   const [notification, setNotification] = useState<string | null>(null);
+
+  // NotificationOverlay の自動クローズタイマーは onClear を依存に持つ。
+  // インライン関数を渡すと App が再描画されるたびにタイマーが張り直され、
+  // 通知が消えなくなるため参照を固定する。
+  const notify = useCallback((msg: string) => setNotification(msg), []);
+  const clearNotification = useCallback(() => setNotification(null), []);
 
   // テーマの準備ができたらウィンドウを表示
   useEffect(() => {
@@ -59,9 +65,8 @@ function App() {
     updateFontFamily,
     fontSize,
     updateFontSize,
-  } = useLayout({
-    onNotification: (msg) => setNotification(msg)
-  });
+    totalPanes,
+  } = useLayout({ onNotification: notify });
 
 
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -144,6 +149,7 @@ function App() {
     { id: "split-v-cmd", label: "Split Horizontally (CMD)", shortcut: "Ctrl+Shift+E", category: "LAYOUT", action: () => activePane && splitPane(activePane, "vertical", { shell: "cmd.exe" }) },
     { id: "split-v-ps", label: "Split Horizontally (PowerShell)", shortcut: "Ctrl+Alt+E", category: "LAYOUT", action: () => activePane && splitPane(activePane, "vertical", { shell: "pwsh.exe" }) },
     { id: "close-pane", label: "Close Pane", shortcut: "Ctrl+Shift+W", category: "LAYOUT", action: () => activePane && closePane(activePane) },
+    { id: "close-tab", label: "Close Tab", category: "GENERAL", action: () => activeTabId && closeTab(activeTabId) },
     { id: "next-pane", label: "Next Pane", shortcut: "Ctrl+Shift+N/↓", category: "LAYOUT", action: nextPane },
     { id: "prev-pane", label: "Previous Pane", shortcut: "Ctrl+Shift+P/↑", category: "LAYOUT", action: prevPane },
     { id: "next-tab", label: "Next Tab", shortcut: "Ctrl+Shift+F/→", category: "GENERAL", action: nextTab },
@@ -151,7 +157,7 @@ function App() {
     { id: "theme-dark", label: "Theme: Dark (Midnight)", category: "THEME", action: () => setTheme("dark") },
     { id: "theme-light", label: "Theme: Light (Daylight)", category: "THEME", action: () => setTheme("light") },
     { id: "theme-system", label: "Theme: Follow System", category: "THEME", action: () => setTheme("system") },
-  ], [activePane, splitPane, closePane, addTab, nextTab, prevTab, nextPane, prevPane, setTheme, openCwdPrompt, openFontPrompt, fontSize, updateFontSize]);
+  ], [activePane, splitPane, closePane, addTab, closeTab, activeTabId, nextTab, prevTab, nextPane, prevPane, setTheme, openCwdPrompt, openFontPrompt, fontSize, updateFontSize]);
 
 
   return (
@@ -183,9 +189,11 @@ function App() {
         ))}
       </div>
 
-      <StatusBar 
-        activeTabNumber={tabs.findIndex(t => t.id === activeTabId) + 1} 
-        totalTabs={tabs.length} 
+      <StatusBar
+        activeTabNumber={tabs.findIndex((t) => t.id === activeTabId) + 1}
+        totalTabs={tabs.length}
+        totalPanes={totalPanes}
+        maxPanes={MAX_PANES}
       />
 
       <CommandPalette
@@ -203,10 +211,7 @@ function App() {
         onSubmit={promptConfig.onSubmit}
       />
 
-      <NotificationOverlay 
-        message={notification} 
-        onClear={() => setNotification(null)} 
-      />
+      <NotificationOverlay message={notification} onClear={clearNotification} />
     </div>
   );
 }
