@@ -67,6 +67,8 @@ interface InternalEntry extends TerminalEntry {
   disposeTerminal: () => void;
   /** シェル統合の追跡状態（実行中コマンドなど）を捨てる。シェルの再起動時に使う */
   resetShellState: () => void;
+  /** 実行中のコマンド名をその場で端末から読み直す（実行中でなければ null） */
+  readRunningCommand: () => string | null;
 }
 
 const entries = new Map<string, InternalEntry>();
@@ -202,6 +204,7 @@ function createEntry(host: HTMLElement, options: TerminalAttachOptions): Interna
     disposePty: () => {},
     disposeTerminal: () => {},
     resetShellState: () => {},
+    readRunningCommand: () => null,
   };
 
   // --- シェル統合: カレントディレクトリ (OSC 9;9 = Windows Terminal 方式 / OSC 7) ---
@@ -255,14 +258,12 @@ function createEntry(host: HTMLElement, options: TerminalAttachOptions): Interna
     running = { command: "", startedAt: Date.now(), anchor: promptEnd };
     promptEnd = null;
     lastExitCode = undefined;
-    paneStateStore.commandStarted(paneId, "…");
+    paneStateStore.commandStarted(paneId, "…", running.startedAt);
     // エコーが描画された頃にコマンド名を読み、実行中表示を更新する
     if (readTimer !== null) window.clearTimeout(readTimer);
     readTimer = window.setTimeout(() => {
       readTimer = null;
-      if (!running) return;
-      running.command = readCommandLine(running.anchor);
-      paneStateStore.commandStarted(paneId, running.command);
+      entry.readRunningCommand();
     }, 150);
   };
 
@@ -281,6 +282,16 @@ function createEntry(host: HTMLElement, options: TerminalAttachOptions): Interna
       exitCode: lastExitCode,
       finishedAt: Date.now(),
     });
+  };
+
+  entry.readRunningCommand = () => {
+    if (!running) return null;
+    const command = readCommandLine(running.anchor) || running.command;
+    if (command !== running.command) {
+      running.command = command;
+      paneStateStore.commandStarted(paneId, command, running.startedAt);
+    }
+    return command || null;
   };
 
   entry.resetShellState = () => {
@@ -471,6 +482,14 @@ export function destroyTerminal(paneId: string) {
 
 export function getTerminalEntry(paneId: string): TerminalEntry | undefined {
   return entries.get(paneId);
+}
+
+/**
+ * ペインで実行中のコマンド名（シェル統合で分かる場合のみ）。表示用のストアは
+ * エコー描画を待って少し遅れて更新されるため、閉じる前の確認などではこちらで最新を読む。
+ */
+export function getRunningCommand(paneId: string): string | null {
+  return entries.get(paneId)?.readRunningCommand() ?? null;
 }
 
 /** ペインの端末にキーボードフォーカスを移す */

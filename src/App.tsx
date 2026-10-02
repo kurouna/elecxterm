@@ -21,7 +21,7 @@ import { applyScheme } from "./theme";
 import { useAllPaneStates } from "./hooks/usePaneState";
 import { CommandItem } from "./types";
 import { Theme, useTheme } from "./ThemeContext";
-import { clearTerminal, focusTerminal, restartTerminal } from "./services/terminalRegistry";
+import { clearTerminal, focusTerminal, getRunningCommand, restartTerminal } from "./services/terminalRegistry";
 import { paneStateStore } from "./services/PaneStateStore";
 import { collectPaneIds, collectPanes, findPane, paneTitle, shortenPath, tabTitle } from "./services/paneInfo";
 import { ConfirmDialog, ConfirmRequest } from "./components/ConfirmDialog";
@@ -118,9 +118,7 @@ function App() {
    */
   const guardClose = useCallback(
     (paneIds: string[], title: string, confirmLabel: string, run: () => void) => {
-      const running = paneIds
-        .map((id) => paneStateStore.getPaneState(id).runningCommand?.command)
-        .filter((c): c is string => !!c);
+      const running = paneIds.map(getRunningCommand).filter((c): c is string => !!c);
       if (running.length === 0) {
         run();
         return;

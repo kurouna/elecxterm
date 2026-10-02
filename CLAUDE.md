@@ -26,7 +26,7 @@ Rust (rustup, stable-msvc) and VS 2022 Build Tools are installed on this machine
 ./build_fix.ps1  # env setup + cargo build (in src-tauri)
 ```
 
-There is no lint or JS test runner configured. TypeScript strict mode is enforced via `tsconfig.json`. `cargo test` (in src-tauri) runs Rust unit tests; `cargo test -- --ignored` spawns real cmd / PowerShell through ConPTY to check the shell-integration sequences.
+There is no lint configured. TypeScript strict mode is enforced via `tsconfig.json`. `npm run test:e2e` runs the Playwright suite in `e2e/` against the dev server with the IPC mock (uses the installed Edge via `channel: "msedge"`); `window.__ELECXTERM_MOCK__` exposes live PTY ids and an IPC log, and `expectNoLeakedShells` asserts live PTYs match the panes on screen. Run it after touching tab/pane/keybinding code. `cargo test` (in src-tauri) runs Rust unit tests; `cargo test -- --ignored` spawns real cmd / PowerShell through ConPTY to check the shell-integration sequences.
 
 ## Architecture
 

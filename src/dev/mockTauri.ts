@@ -172,7 +172,16 @@ function onInput(sh: FakeShell, data: string) {
   }
 }
 
+/** e2e テスト（e2e/*.spec.ts）から PTY の生成・破棄を検証するための記録 */
+const ipcLog: { cmd: string; id?: string; shell?: string }[] = [];
+
 export function installTauriMock() {
+  (window as unknown as { __ELECXTERM_MOCK__: unknown }).__ELECXTERM_MOCK__ = {
+    /** 生きている（破棄されていない）PTY の ID */
+    livePtys: () => [...shells.keys()],
+    /** PTY に関わる IPC 呼び出しの履歴 */
+    log: ipcLog,
+  };
   mockWindows("main");
   mockIPC(
     (cmd, rawArgs) => {
@@ -190,6 +199,7 @@ export function installTauriMock() {
             lastExit: 0,
           };
           shells.set(id, sh);
+          ipcLog.push({ cmd, id, shell: sh.shell });
           // デモシナリオ（src/dev/demo.ts）では、ペインごとの台本を流す
           const script = DEMO?.scripts[id];
           if (script) {
@@ -215,6 +225,7 @@ export function installTauriMock() {
           return null;
         }
         case "destroy_pty": {
+          ipcLog.push({ cmd, id: args.id });
           const sh = shells.get(args.id);
           if (sh?.timer) window.clearInterval(sh.timer);
           shells.delete(args.id);
@@ -244,6 +255,9 @@ export function installTauriMock() {
           return null;
         case "plugin:notification|is_permission_granted":
           return true;
+        case "plugin:window|start_dragging":
+          console.info("[mock] start_dragging");
+          return null;
         case "plugin:window|request_user_attention":
           console.info("[mock] request_user_attention", args.value);
           return null;

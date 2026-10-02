@@ -106,8 +106,8 @@ class PaneStateStore {
   }
 
   /** コマンドの開始を記録する */
-  commandStarted(id: string, command: string) {
-    this.update(id, { runningCommand: command ? { command, startedAt: Date.now() } : undefined });
+  commandStarted(id: string, command: string, startedAt = Date.now()) {
+    this.update(id, { runningCommand: command ? { command, startedAt } : undefined });
   }
 
   /** コマンドの完了を記録し、購読者（通知）へ知らせる */

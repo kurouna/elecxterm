@@ -229,8 +229,11 @@ URL に `?demo=<scene>&theme=<dark|light>` を付けると、README のスクリ
 npm run build                                      # TypeScript の型チェック + Vite ビルド
 cargo test --manifest-path src-tauri/Cargo.toml     # Rust のユニットテスト
 cargo test --manifest-path src-tauri/Cargo.toml -- --ignored   # 実際の cmd / PowerShell でシェル統合を検証
+npm run test:e2e                                   # e2e テスト（Playwright + インストール済みの Edge）
 npm run tauri build                                # インストーラー（.msi / .exe）を生成
 ```
+
+e2e テスト（`e2e/`）は開発サーバーを自動で起動し、ブラウザ上で IPC をモックした状態で、タブやペインを開く・分割する・`Ctrl+Shift+W` で閉じる・再読み込みで復元する、といった操作を実際のキー入力で検証します。閉じたペインやタブのシェルがすべて破棄されていること（プロセスのリークが無いこと）も毎回確認します。
 
 ## 🚀 リリース手順
 
@@ -267,6 +270,7 @@ src/                     React + TypeScript フロントエンド
 src-tauri/               Rust バックエンド（Tauri v2, portable-pty）
   src/pty_manager.rs     PTY の生成・入出力・終了監視とシェル統合
 docs/                    改善プラン（UX_IMPROVEMENT_PLAN.md）とスクリーンショット
+e2e/                     Playwright による e2e テスト
 scripts/                 スクリーンショット撮影スクリプト
 ```
 
