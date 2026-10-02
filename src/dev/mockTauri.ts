@@ -7,7 +7,11 @@ import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import type { Channel } from "@tauri-apps/api/core";
 
-const HOME = "C:\\Users\\demo";
+/** デモシナリオ（?demo=...）が設定していれば、その台本とホームディレクトリを使う */
+const DEMO = (window as unknown as {
+  __ELECXTERM_DEMO__?: { scripts: Record<string, { initial: string; later?: { delay: number; text: string }[] }>; home: string };
+}).__ELECXTERM_DEMO__;
+const HOME = DEMO?.home ?? "C:\\Users\\demo";
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -186,6 +190,13 @@ export function installTauriMock() {
             lastExit: 0,
           };
           shells.set(id, sh);
+          // デモシナリオ（src/dev/demo.ts）では、ペインごとの台本を流す
+          const script = DEMO?.scripts[id];
+          if (script) {
+            setTimeout(() => send(sh, script.initial), 40);
+            script.later?.forEach(({ delay, text }) => setTimeout(() => send(sh, text), delay));
+            return sh.shell;
+          }
           setTimeout(() => {
             send(
               sh,

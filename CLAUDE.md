@@ -11,6 +11,9 @@ elecxterm is a next-generation terminal manager built with **Tauri v2** (Rust ba
 ```bash
 npm run dev          # Vite dev server only (port 1420). Opened in a plain browser, Tauri IPC is mocked
                      # with a fake shell (src/dev/mockTauri.ts, dev-only) so the UI can be exercised.
+                     # ?demo=<main|overview|switch|palette|settings>&theme=<dark|light> replays the
+                     # README screenshot scenes (src/dev/demo.ts); ./scripts/capture-screenshots.ps1
+                     # re-shoots them into docs/screenshots/ with headless Edge (dev server must be running).
 npm run tauri dev    # Full dev build with Tauri (use this for testing)
 npm run build        # TypeScript type-check + Vite bundle
 npm run tauri build  # Produce release installer (.msi / .exe)
@@ -78,6 +81,7 @@ There is no lint or JS test runner configured. TypeScript strict mode is enforce
 
 - **Windows primary target**: Shell defaults to CMD/PowerShell (PowerShell panes use `pwsh`, PowerShell 7). PTY creation must handle Windows-specific paths.
 - **No decorations window**: The app window is transparent and frameless (`tauri.conf.json`). `TitleBar.tsx` provides custom window chrome.
+- **Assets**: everything in `public/` is bundled into the app — keep README screenshots in `docs/screenshots/`. PowerShell scripts with Japanese text must be saved as UTF-8 *with BOM* (Windows PowerShell 5.1 otherwise reads them as Shift-JIS).
 - **CSP is disabled** (`"security": { "csp": null }`) — avoid adding external script sources. UI fonts are system fonts (no Google Fonts) so the app works offline.
 - **Tauri v2 API**: Use `@tauri-apps/api/core` for `invoke()`, `@tauri-apps/api/event` for `listen()`. Tauri v1 APIs are incompatible.
 - **Keep Tauri versions in lockstep**: `tauri build` (and therefore the release CI) fails if an npm `@tauri-apps/*` package and its Rust crate differ in major.minor (e.g. `@tauri-apps/api` 2.12 vs `tauri` 2.11). `cargo test`/`cargo build` do not check this — after touching either lockfile, run `npm run tauri build` (or `npx tauri info`) before tagging.

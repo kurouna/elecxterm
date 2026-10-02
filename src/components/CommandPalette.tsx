@@ -102,12 +102,16 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
       const matches = commands
         .map((cmd) => {
           const onLabel = fuzzyMatch(cmd.label, q);
-          const onExtra = fuzzyMatch(`${cmd.category ?? ""} ${cmd.keywords ?? ""} ${cmd.description ?? ""}`, q);
+          // カテゴリ・キーワード・パスは長いので、あいまい一致にすると無関係な文字の
+          // 寄せ集めで当たってしまう。語ごとの部分一致だけを見る
+          const extra = `${cmd.category ?? ""} ${cmd.keywords ?? ""} ${cmd.description ?? ""}`.toLowerCase();
+          const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+          const onExtra = terms.length > 0 && terms.every((t) => extra.includes(t));
           if (!onLabel && !onExtra) return null;
           return {
             cmd,
             // ラベルでの一致を優先する
-            score: onLabel ? onLabel.score + 1 : (onExtra?.score ?? 0) * 0.5,
+            score: onLabel ? onLabel.score + 1 : q.length * 0.5,
             positions: onLabel?.positions ?? [],
           };
         })

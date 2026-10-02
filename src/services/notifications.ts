@@ -3,6 +3,7 @@ import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
 
 /** "1m 05s" のような所要時間の表記 */
 export function formatDuration(ms: number): string {
+  if (ms < 1000) return "<1s";
   const total = Math.round(ms / 1000);
   if (total < 60) return `${total}s`;
   const m = Math.floor(total / 60);
