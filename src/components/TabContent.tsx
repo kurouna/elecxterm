@@ -1,61 +1,49 @@
-import { createContext, memo, useContext, useMemo } from "react";
+import { memo, useMemo } from "react";
 import { SplitLayout } from "./SplitLayout";
-import { LayoutNode } from "../types";
-
-// タブの表示状態を伝播するためのシンプルなContext
-const TabVisibilityContext = createContext({ isActive: false });
-export const useTabVisibility = () => useContext(TabVisibilityContext);
+import { TerminalPane } from "./TerminalPane";
+import { Tab } from "../types";
+import { TabInfoContext } from "./PaneContext";
+import { findPane } from "../services/paneInfo";
 
 interface TabContentProps {
-  layout: LayoutNode;
-  activePane: string;
+  tab: Tab;
   isActive: boolean;
-  fontFamily: string;
-  fontSize: number;
-  onPaneActivate: (id: string) => void;
-  onRatioChange: (path: number[], ratios: number[]) => void;
 }
 
 /**
  * タブのコンテンツ。非アクティブなタブも DOM にマウントしたまま保持して
- * PTY と xterm の状態を維持するが、`visibility` と `z-index` で瞬時に
+ * xterm の状態とサイズを維持するが、`visibility` と `z-index` で瞬時に
  * 切り替えることでタブ切替時のクロスフェード由来のチラつきを防ぐ。
+ * ズーム中はアクティブペインだけを描画する（他のペインは registry 上で生き続ける）。
  */
-function TabContentComponent({
-  layout,
-  activePane,
-  isActive,
-  fontFamily,
-  fontSize,
-  onPaneActivate,
-  onRatioChange,
-}: TabContentProps) {
-  // Context value を isActive が変わった時だけ再生成する。
-  // こうしないと TabContent の再レンダごとに新規オブジェクトが作られ、
-  // useContext 経由で TerminalPane 群が React.memo を貫通して再レンダされる。
-  const visibilityValue = useMemo(() => ({ isActive }), [isActive]);
+function TabContentComponent({ tab, isActive }: TabContentProps) {
+  const multiPane = tab.layout.type !== "pane";
+  const zoomed = multiPane && !!tab.zoomed;
+  // Context value はタブの状態が変わった時だけ作り直す（TerminalPane の memo を貫通させない）
+  const info = useMemo(
+    () => ({ tabId: tab.id, isTabActive: isActive, multiPane, zoomed }),
+    [tab.id, isActive, multiPane, zoomed]
+  );
+  const zoomedPane = zoomed ? findPane(tab.layout, tab.activePaneId) : undefined;
 
   return (
-    <TabVisibilityContext.Provider value={visibilityValue}>
+    <TabInfoContext.Provider value={info}>
       <div
         aria-hidden={!isActive}
-        className="absolute inset-0 p-0.5"
+        className="absolute inset-0"
         style={{
           visibility: isActive ? "visible" : "hidden",
           zIndex: isActive ? 10 : 0,
           pointerEvents: isActive ? "auto" : "none",
         }}
       >
-        <SplitLayout
-          node={layout}
-          activePane={activePane}
-          fontFamily={fontFamily}
-          fontSize={fontSize}
-          onPaneActivate={onPaneActivate}
-          onRatioChange={onRatioChange}
-        />
+        {zoomedPane ? (
+          <TerminalPane pane={zoomedPane} isActive />
+        ) : (
+          <SplitLayout node={tab.layout} activePane={tab.activePaneId} />
+        )}
       </div>
-    </TabVisibilityContext.Provider>
+    </TabInfoContext.Provider>
   );
 }
 

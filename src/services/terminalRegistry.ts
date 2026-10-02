@@ -2,39 +2,45 @@ import { Terminal, ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { SearchAddon } from "@xterm/addon-search";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ptyBridge } from "../pty-bridge";
 import { paneStateStore } from "./PaneStateStore";
+import type { CursorStyle } from "../types";
 
 /**
  * Terminal/PTY インスタンスの寿命を React ツリーから切り離して管理する。
  * ペイン分割・クローズ時のレイアウト再構築で TerminalPane が再マウントされても
  * 同じ xterm / PTY を別のホスト要素に付け替えるだけで、カレントディレクトリや
  * スクロールバックを失わないようにする。
+ *
+ * xterm は同期的に生成してすぐホストへ貼り付ける（文字寸法を正しく測れ、
+ * 最初から正しいサイズで PTY を起動できる）。PTY の起動だけが非同期で、
+ * その間のキー入力は `ready` の完了を待ってから順序どおり送られる。
  */
 
-export interface TerminalCreateOptions {
-  paneId: string;
-  cwd?: string;
-  shell?: string;
+export interface TerminalAppearance {
   fontFamily: string;
   fontSize: number;
+  lineHeight: number;
+  cursorStyle: CursorStyle;
+  cursorBlink: boolean;
   theme: ITheme;
 }
 
-/** 表示に関わる設定だけを抜き出したもの（再アタッチ時の再同期に使う） */
-export type TerminalAppearance = Pick<
-  TerminalCreateOptions,
-  "fontFamily" | "fontSize" | "theme"
->;
+export interface TerminalAttachOptions extends TerminalAppearance {
+  paneId: string;
+  cwd?: string;
+  shell?: string;
+}
 
 export interface TerminalEntry {
   paneId: string;
-  /** xterm を open() する安定したホスト要素。TerminalPane が自分の container に appendChild する */
+  /** xterm を open() した安定したホスト要素。TerminalPane が自分の container に appendChild する */
   rootEl: HTMLDivElement;
   terminal: Terminal;
   fitAddon: FitAddon;
-  webglAddon: WebglAddon | null;
+  searchAddon: SearchAddon;
   /**
    * 最後に適用した見た目設定。
    * xterm の `options.theme` ゲッターは代入した値と同一参照を返さないため、
@@ -44,53 +50,40 @@ export interface TerminalEntry {
   appearance: TerminalAppearance;
 }
 
-/**
- * 生成中（await 中）にペインが閉じられた場合に投げるエラー。
- * 呼び出し側は「異常」ではなく通常のキャンセルとして無視してよい。
- */
-export class TerminalDestroyedError extends Error {
-  constructor(paneId: string) {
-    super(`Terminal for pane ${paneId} was destroyed during creation`);
-    this.name = "TerminalDestroyedError";
-  }
+interface InternalEntry extends TerminalEntry {
+  /**
+   * 現在の PTY の ID。再起動のたびに変える（同じ ID だと、古いプロセスの
+   * 終了イベントが新しいプロセスの終了として届いてしまう）。
+   */
+  ptyId: string;
+  generation: number;
+  shell?: string;
+  cwd?: string;
+  /** 現在の PTY が入力を受け付けられるようになったら true で解決する */
+  ready: Promise<boolean>;
+  disposed: boolean;
+  /** 現在の PTY に紐づく購読の解除 */
+  disposePty: () => void;
+  disposeTerminal: () => void;
 }
 
-/** 選択テキストの自動コピーをまとめる遅延時間（ドラッグ中の連続発火を抑える） */
-const SELECTION_COPY_DEBOUNCE_MS = 120;
+const entries = new Map<string, InternalEntry>();
 
-const entries = new Map<string, TerminalEntry>();
-const cleanups = new Map<string, () => void>();
-const pending = new Map<string, Promise<TerminalEntry>>();
 /**
- * 「生成中に destroyTerminal された」ペイン ID。
- * これを見ないと、破棄要求のあとに生成が完了した Terminal / PTY が
- * どこからも参照されないまま生き残り、プロセスがリークする。
+ * ペインの Terminal をホスト要素に貼り付ける。無ければ生成して PTY を起動する。
+ * 既存の場合は見た目を再同期して付け替えるだけ。
  */
-const destroyRequested = new Set<string>();
-
-export async function getOrCreateTerminal(
-  options: TerminalCreateOptions
-): Promise<TerminalEntry> {
+export function attachTerminal(host: HTMLElement, options: TerminalAttachOptions): TerminalEntry {
   const existing = entries.get(options.paneId);
   if (existing) {
-    // 生成時と現在で見た目設定がずれている可能性があるため再同期する
+    host.appendChild(existing.rootEl);
     applyAppearance(existing, options);
     return existing;
   }
-
-  const inProgress = pending.get(options.paneId);
-  if (inProgress) return inProgress;
-
-  // 新規生成はそれ以前の破棄要求を打ち消す（同じ ID が再利用されることはないが安全側に倒す）
-  destroyRequested.delete(options.paneId);
-
-  const promise = createEntry(options);
-  pending.set(options.paneId, promise);
-  try {
-    return await promise;
-  } finally {
-    pending.delete(options.paneId);
-  }
+  const entry = createEntry(host, options);
+  entries.set(options.paneId, entry);
+  startPty(entry);
+  return entry;
 }
 
 /**
@@ -110,40 +103,62 @@ export function applyAppearance(entry: TerminalEntry, next: TerminalAppearance):
     opts.fontSize = next.fontSize;
     needsFit = true;
   }
+  if (current.lineHeight !== next.lineHeight) {
+    opts.lineHeight = next.lineHeight;
+    needsFit = true;
+  }
+  if (current.cursorStyle !== next.cursorStyle) opts.cursorStyle = next.cursorStyle;
+  if (current.cursorBlink !== next.cursorBlink) opts.cursorBlink = next.cursorBlink;
   if (current.theme !== next.theme) {
     opts.theme = next.theme;
   }
 
-  entry.appearance = { fontFamily: next.fontFamily, fontSize: next.fontSize, theme: next.theme };
+  entry.appearance = pickAppearance(next);
   return needsFit;
 }
 
-async function createEntry(options: TerminalCreateOptions): Promise<TerminalEntry> {
+function pickAppearance(a: TerminalAppearance): TerminalAppearance {
+  return {
+    fontFamily: a.fontFamily,
+    fontSize: a.fontSize,
+    lineHeight: a.lineHeight,
+    cursorStyle: a.cursorStyle,
+    cursorBlink: a.cursorBlink,
+    theme: a.theme,
+  };
+}
+
+function createEntry(host: HTMLElement, options: TerminalAttachOptions): InternalEntry {
+  const { paneId } = options;
   const rootEl = document.createElement("div");
-  rootEl.style.height = "100%";
-  rootEl.style.width = "100%";
-  rootEl.style.background = "transparent";
+  rootEl.className = "terminal-root";
+  host.appendChild(rootEl);
 
   const terminal = new Terminal({
     fontFamily: options.fontFamily,
     fontSize: options.fontSize,
-    lineHeight: 1.35,
+    lineHeight: options.lineHeight,
     // 小数の letterSpacing はグリフがサブピクセル位置に置かれ滲む原因になるため整数(0)にする
     letterSpacing: 0,
     fontWeight: "500",
     fontWeightBold: "bold",
-    cursorBlink: true,
-    cursorStyle: "bar",
+    cursorBlink: options.cursorBlink,
+    cursorStyle: options.cursorStyle,
     cursorWidth: 2,
+    cursorInactiveStyle: "outline",
     // 透明キャンバスへのアルファ合成はアンチエイリアス縁にハロー(滲み)を生む。
     // テーマ背景は --bg-main と一致するため、不透明描画にしても見た目は変わらず文字が締まる。
     allowTransparency: false,
-    scrollback: 5000,
+    allowProposedApi: true,
+    scrollback: 10000,
+    smoothScrollDuration: 0,
     theme: options.theme,
   });
 
   const fitAddon = new FitAddon();
+  const searchAddon = new SearchAddon();
   terminal.loadAddon(fitAddon);
+  terminal.loadAddon(searchAddon);
   terminal.loadAddon(
     new WebLinksAddon((_event, uri) => {
       openUrl(uri).catch(() => {});
@@ -154,124 +169,209 @@ async function createEntry(options: TerminalCreateOptions): Promise<TerminalEntr
   let webglAddon: WebglAddon | null = null;
   try {
     webglAddon = new WebglAddon();
-    webglAddon.onContextLoss(() => webglAddon?.dispose());
+    webglAddon.onContextLoss(() => {
+      webglAddon?.dispose();
+      webglAddon = null;
+    });
     terminal.loadAddon(webglAddon);
   } catch (e) {
     console.warn("WebGL addon failed to load:", e);
   }
 
-  const dataDisposable = terminal.onData((data) =>
-    ptyBridge.write(options.paneId, data).catch(() => {})
-  );
+  try {
+    fitAddon.fit();
+  } catch {
+    // ホストがまだレイアウトされていなければ既定サイズのまま起動し、後の fit で合わせる
+  }
 
-  // 選択の自動コピー。onSelectionChange はドラッグ中に高頻度で発火するため、
-  // 実際のクリップボード書き込みは操作が落ち着いてから一度だけ行う。
-  let copyTimer: number | null = null;
-  const selectionDisposable = terminal.onSelectionChange(() => {
-    if (copyTimer !== null) window.clearTimeout(copyTimer);
-    copyTimer = window.setTimeout(() => {
-      copyTimer = null;
-      const text = terminal.getSelection();
-      if (text) navigator.clipboard.writeText(text).catch(() => {});
-    }, SELECTION_COPY_DEBOUNCE_MS);
+  const entry: InternalEntry = {
+    paneId,
+    ptyId: paneId,
+    generation: 0,
+    rootEl,
+    terminal,
+    fitAddon,
+    searchAddon,
+    appearance: pickAppearance(options),
+    shell: options.shell,
+    cwd: options.cwd,
+    ready: Promise.resolve(false),
+    disposed: false,
+    disposePty: () => {},
+    disposeTerminal: () => {},
+  };
+
+  // --- シェル統合: カレントディレクトリ (OSC 9;9 = Windows Terminal 方式 / OSC 7) ---
+  const oscCwd = terminal.parser.registerOscHandler(9, (data) => {
+    if (!data.startsWith("9;")) return false;
+    const cwd = data.slice(2).replace(/^"(.*)"$/, "$1");
+    if (cwd) paneStateStore.update(paneId, { cwd });
+    return true;
   });
+  const oscFileUrl = terminal.parser.registerOscHandler(7, (data) => {
+    try {
+      const url = new URL(data);
+      let path = decodeURIComponent(url.pathname);
+      if (/^\/[A-Za-z]:/.test(path)) path = path.slice(1).replace(/\//g, "\\");
+      if (path) paneStateStore.update(paneId, { cwd: path });
+    } catch {
+      // 不正な URL は無視
+    }
+    return true;
+  });
+  const titleDisposable = terminal.onTitleChange((title) => paneStateStore.update(paneId, { title }));
+  const bellDisposable = terminal.onBell(() => paneStateStore.markBell(paneId));
+
+  // --- 入力 ---
+  const dataDisposable = terminal.onData((data) => {
+    const { status } = paneStateStore.getPaneState(paneId);
+    // 終了したペインでは Enter でシェルを再起動する
+    if (status === "exited" || status === "error") {
+      if (data === "\r") restartTerminal(paneId);
+      return;
+    }
+    // ready を経由することで、PTY 起動前に打たれたキーも順序どおり送られる
+    entry.ready.then((ok) => {
+      if (ok) ptyBridge.write(entry.ptyId, data).catch(() => {});
+    });
+  });
+
+  // コピー & ペースト（Windows Terminal と同じ既定）。
+  // false を返したキーは xterm が処理せず、ブラウザ既定の paste イベントが
+  // xterm の textarea に届くため bracketed paste も xterm に任せられる。
+  terminal.attachCustomKeyEventHandler((e) => {
+    if (e.type !== "keydown" || !e.ctrlKey || e.altKey || e.metaKey) return true;
+    const key = e.key.toLowerCase();
+    if (key === "v") return false;
+    if (key === "c" && (e.shiftKey || terminal.hasSelection())) {
+      copySelection(terminal);
+      if (!e.shiftKey) terminal.clearSelection();
+      e.preventDefault();
+      return false;
+    }
+    return true;
+  });
+
+  // 選択の自動コピー（Windows Terminal の copyOnSelect と同じく、マウスを離した時点で 1 回）。
+  // onSelectionChange で拾うと、検索ハイライトなどプログラムによる選択までコピーしてしまう。
+  const onPointerUp = (e: PointerEvent) => {
+    if (e.button === 0 && terminal.hasSelection()) copySelection(terminal);
+  };
+  rootEl.addEventListener("pointerup", onPointerUp);
 
   const resizeDisposable = terminal.onResize(({ rows, cols }) => {
-    ptyBridge.resize(options.paneId, rows, cols).catch(() => {});
+    entry.ready.then((ok) => {
+      if (ok) ptyBridge.resize(entry.ptyId, rows, cols).catch(() => {});
+    });
   });
 
-  let unlistenData: (() => void) | null = null;
-  let unlistenExit: (() => void) | null = null;
-
-  const disposeAll = () => {
-    if (copyTimer !== null) window.clearTimeout(copyTimer);
-    unlistenData?.();
-    unlistenExit?.();
-    dataDisposable.dispose();
-    selectionDisposable.dispose();
-    resizeDisposable.dispose();
+  entry.disposeTerminal = () => {
+    rootEl.removeEventListener("pointerup", onPointerUp);
+    [oscCwd, oscFileUrl, titleDisposable, bellDisposable, dataDisposable, resizeDisposable]
+      .forEach((d) => d.dispose());
     webglAddon?.dispose();
     terminal.dispose();
     rootEl.remove();
   };
 
-  try {
-    unlistenExit = await ptyBridge.onExit(options.paneId, () => {
-      paneStateStore.updateStatus(options.paneId, "exited");
-      terminal.write("\r\n\x1b[90m[Process exited]\x1b[0m\r\n");
-    });
+  return entry;
+}
 
-    const dims = fitAddon.proposeDimensions();
-    // 出力は create に渡したコールバック（Channel 経由）で受信する
-    unlistenData = await ptyBridge.create(
-      {
-        id: options.paneId,
-        cwd: options.cwd,
-        shell: options.shell,
-        rows: dims?.rows ?? 24,
-        cols: dims?.cols ?? 80,
-      },
-      (data) => {
-        terminal.write(data);
-      }
-    );
+function copySelection(terminal: Terminal) {
+  const text = terminal.getSelection();
+  if (text) navigator.clipboard.writeText(text).catch(() => {});
+}
 
-    const currentState = paneStateStore.getPaneState(options.paneId);
-    if (currentState.status !== "exited") {
-      paneStateStore.updateStatus(options.paneId, "running");
-    }
-  } catch (e) {
-    // セットアップに失敗した場合は部分的に確保した資源を解放してから伝播
-    disposeAll();
-    // 破棄要求が来ていた場合はここで消化する（残すと Set にゴミが残り続ける）
-    destroyRequested.delete(options.paneId);
-    paneStateStore.updateStatus(options.paneId, "error");
-    throw e;
-  }
+/** PTY を起動して entry に結び付ける。再起動時も同じ経路を通る */
+function startPty(entry: InternalEntry) {
+  const { paneId, terminal } = entry;
+  const ptyId = entry.generation === 0 ? paneId : `${paneId}_r${entry.generation}`;
+  entry.ptyId = ptyId;
+  paneStateStore.register(paneId);
 
-  // 生成待ちの間にペインが閉じられていた場合。ここで畳まないと
-  // entries に載らない（＝誰も破棄できない）Terminal と PTY が残る。
-  if (destroyRequested.has(options.paneId)) {
-    destroyRequested.delete(options.paneId);
-    disposeAll();
-    ptyBridge.destroy(options.paneId).catch(() => {});
-    paneStateStore.deletePane(options.paneId);
-    throw new TerminalDestroyedError(options.paneId);
-  }
-
-  const entry: TerminalEntry = {
-    paneId: options.paneId,
-    rootEl,
-    terminal,
-    fitAddon,
-    webglAddon,
-    appearance: {
-      fontFamily: options.fontFamily,
-      fontSize: options.fontSize,
-      theme: options.theme,
-    },
+  let disposed = false;
+  let unlistenExit: (() => void) | null = null;
+  let disposeData: (() => void) | null = null;
+  entry.disposePty = () => {
+    disposed = true;
+    unlistenExit?.();
+    disposeData?.();
   };
 
-  entries.set(options.paneId, entry);
-  cleanups.set(options.paneId, disposeAll);
-  return entry;
+  entry.ready = (async () => {
+    try {
+      // 終了イベントは起動直後に飛んでくることもあるので、PTY 生成前に購読しておく
+      unlistenExit = await ptyBridge.onExit(ptyId, (code) => {
+        paneStateStore.update(paneId, { status: "exited", exitCode: code });
+        const detail = code === null ? "" : ` with code ${code}`;
+        terminal.write(`\r\n\x1b[90m[Process exited${detail}] Press Enter to restart.\x1b[0m\r\n`);
+      });
+      if (disposed) {
+        unlistenExit();
+        return false;
+      }
+
+      const { shell, dispose } = await ptyBridge.create(
+        { id: ptyId, cwd: entry.cwd, shell: entry.shell, rows: terminal.rows, cols: terminal.cols },
+        (data) => {
+          terminal.write(data);
+          paneStateStore.markOutput(paneId);
+        }
+      );
+      disposeData = dispose;
+
+      // 生成待ちの間にペインが閉じられていた場合。ここで畳まないと
+      // 誰も破棄できない PTY プロセスが残る。
+      if (disposed || entry.disposed) {
+        dispose();
+        ptyBridge.destroy(ptyId).catch(() => {});
+        return false;
+      }
+
+      if (paneStateStore.getPaneState(paneId).status === "starting") {
+        paneStateStore.update(paneId, { status: "running", shell });
+      }
+      return true;
+    } catch (e) {
+      if (disposed) return false;
+      paneStateStore.update(paneId, { status: "error" });
+      terminal.write(`\r\n\x1b[31mFailed to start shell: ${String(e)}\x1b[0m\r\n`);
+      terminal.write("\x1b[90mPress Enter to retry.\x1b[0m\r\n");
+      return false;
+    }
+  })();
+
+  // 起動中に fit でサイズが変わっていたら、起動後に合わせ直す
+  const requested = { rows: terminal.rows, cols: terminal.cols };
+  entry.ready.then((ok) => {
+    if (ok && (terminal.rows !== requested.rows || terminal.cols !== requested.cols)) {
+      ptyBridge.resize(ptyId, terminal.rows, terminal.cols).catch(() => {});
+    }
+  });
+}
+
+/** 終了したペインのシェルを、最後に分かっているディレクトリで起動し直す */
+export function restartTerminal(paneId: string) {
+  const entry = entries.get(paneId);
+  if (!entry || entry.disposed) return;
+  entry.disposePty();
+  ptyBridge.destroy(entry.ptyId).catch(() => {});
+  entry.generation += 1;
+  entry.cwd = paneStateStore.getPaneState(paneId).cwd ?? entry.cwd;
+  entry.terminal.write("\x1b[2J\x1b[3J\x1b[H");
+  startPty(entry);
 }
 
 /** ペインを明示的に閉じる際に呼び出す。Terminal / PTY / 状態をまとめて破棄する */
 export function destroyTerminal(paneId: string) {
-  // まだ生成中なら、完了時に createEntry 側で畳んでもらう
-  if (!entries.has(paneId) && pending.has(paneId)) {
-    destroyRequested.add(paneId);
-    return;
+  const entry = entries.get(paneId);
+  if (entry) {
+    entry.disposed = true;
+    entry.disposePty();
+    entry.disposeTerminal();
+    entries.delete(paneId);
   }
-
-  const cleanup = cleanups.get(paneId);
-  if (cleanup) {
-    cleanup();
-    cleanups.delete(paneId);
-  }
-  entries.delete(paneId);
-  ptyBridge.destroy(paneId).catch(() => {});
+  ptyBridge.destroy(entry?.ptyId ?? paneId).catch(() => {});
   paneStateStore.deletePane(paneId);
 }
 
@@ -279,10 +379,49 @@ export function getTerminalEntry(paneId: string): TerminalEntry | undefined {
   return entries.get(paneId);
 }
 
+/** ペインの端末にキーボードフォーカスを移す */
+export function focusTerminal(paneId: string) {
+  entries.get(paneId)?.terminal.focus();
+}
+
+/** ペインの端末に文字列を貼り付ける（bracketed paste 対応） */
+export function pasteToTerminal(paneId: string, text: string) {
+  entries.get(paneId)?.terminal.paste(text);
+}
+
+/** 現在の選択範囲をコピーする。選択が無ければ false */
+export function copyTerminalSelection(paneId: string): boolean {
+  const terminal = entries.get(paneId)?.terminal;
+  if (!terminal?.hasSelection()) return false;
+  copySelection(terminal);
+  return true;
+}
+
+export function clearTerminal(paneId: string) {
+  entries.get(paneId)?.terminal.clear();
+}
+
+/**
+ * 端末の末尾 `maxLines` 行をプレーンテキストで返す（概要表示のプレビュー用）。
+ * カーソル行より下の空行と末尾の空白は落とす。
+ */
+export function getTerminalSnapshot(paneId: string, maxLines: number): string[] {
+  const terminal = entries.get(paneId)?.terminal;
+  if (!terminal) return [];
+  const buffer = terminal.buffer.active;
+  let last = buffer.baseY + buffer.cursorY;
+  while (last > 0 && !buffer.getLine(last)?.translateToString(true).trim()) last--;
+  const lines: string[] = [];
+  for (let y = Math.max(0, last - maxLines + 1); y <= last; y++) {
+    lines.push(buffer.getLine(y)?.translateToString(true) ?? "");
+  }
+  return lines;
+}
+
 /** レイアウトから消えたのに registry に残っているペインを掃除する（保険） */
 export function destroyOrphanTerminals(livePaneIds: Iterable<string>) {
   const live = new Set(livePaneIds);
-  for (const paneId of [...entries.keys(), ...pending.keys()]) {
+  for (const paneId of [...entries.keys()]) {
     if (!live.has(paneId)) destroyTerminal(paneId);
   }
 }

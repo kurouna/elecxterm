@@ -1,217 +1,388 @@
-import { useCallback, useMemo, useState, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { TitleBar } from "./components/TitleBar";
 import { TabBar } from "./components/TabBar";
 import { TabContent } from "./components/TabContent";
 import { StatusBar } from "./components/StatusBar";
-import { CommandPalette } from "./components/CommandPalette";
-import { Prompt } from "./components/Prompt";
+import { CommandPalette, GOTO_CATEGORY } from "./components/CommandPalette";
+import { Prompt, PromptRequest } from "./components/Prompt";
+import { PaneOverview, OverviewMode } from "./components/PaneOverview";
+import { ShortcutHelp } from "./components/ShortcutHelp";
+import { SettingsPanel } from "./components/SettingsPanel";
+import { runThemeTransition } from "./themeTransition";
+import { NotificationOverlay, Toast, ToastType } from "./components/NotificationOverlay";
+import { PaneActions, PaneActionsContext, PaneUi, PaneUiContext } from "./components/PaneContext";
 import { ptyBridge } from "./pty-bridge";
-import { useLayout, DEFAULT_FONT_SIZE, MAX_PANES } from "./hooks/useLayout";
+import { useLayout, DEFAULT_FONT_SIZE, MAX_PANES, DEFAULT_SHELL, PWSH_SHELL } from "./hooks/useLayout";
 import { useKeybinds } from "./hooks/useKeybinds";
+import { useAllPaneStates } from "./hooks/usePaneState";
 import { CommandItem } from "./types";
-import { useTheme } from "./ThemeContext";
+import { Theme, useTheme } from "./ThemeContext";
+import { clearTerminal, focusTerminal, restartTerminal } from "./services/terminalRegistry";
+import { paneStateStore } from "./services/PaneStateStore";
+import { collectPanes, findPane, paneTitle, shortenPath, tabTitle } from "./services/paneInfo";
+import { KEYS } from "./keymap";
 
-import { NotificationOverlay } from "./components/NotificationOverlay";
+type Overlay =
+  | { kind: "palette" }
+  | { kind: "help" }
+  | { kind: "settings" }
+  | { kind: "overview"; mode: OverviewMode; direction: 1 | -1 }
+  | null;
 
 function App() {
-  const { setTheme, resolvedTheme } = useTheme();
-  const isFirstRender = useRef(true);
-  const [notification, setNotification] = useState<string | null>(null);
+  const { theme, setTheme, resolvedTheme, terminalTheme } = useTheme();
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [overlay, setOverlay] = useState<Overlay>(null);
+  const [prompt, setPrompt] = useState<PromptRequest | null>(null);
+  const [findPaneId, setFindPaneId] = useState<string | null>(null);
+  const [homeDir, setHomeDir] = useState<string | undefined>(undefined);
+  const toastId = useRef(0);
 
-  // NotificationOverlay の自動クローズタイマーは onClear を依存に持つ。
-  // インライン関数を渡すと App が再描画されるたびにタイマーが張り直され、
-  // 通知が消えなくなるため参照を固定する。
-  const notify = useCallback((msg: string) => setNotification(msg), []);
-  const clearNotification = useCallback(() => setNotification(null), []);
+  const notify = useCallback((message: string, type: ToastType = "warning") => {
+    toastId.current += 1;
+    const id = toastId.current;
+    // 同じ文言が連続した場合は積み重ねず置き換える
+    setToasts((prev) => [...prev.filter((t) => t.message !== message), { id, message, type }].slice(-4));
+  }, []);
+  const dismissToast = useCallback((id: number) => setToasts((prev) => prev.filter((t) => t.id !== id)), []);
 
-  // テーマの準備ができたらウィンドウを表示
-  useEffect(() => {
-    if (isFirstRender.current) {
-      const appWindow = getCurrentWindow();
-      
-      // テーマが適用され、DOMの準備が整ってから表示
-      // requestAnimationFrame を重ねることで確実に描画を待つ
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          document.documentElement.style.visibility = 'visible';
-          appWindow.show();
-        });
-      });
-      isFirstRender.current = false;
-    }
-  }, [resolvedTheme]);
-
+  const layout = useLayout({ onNotification: notify });
   const {
+    isLoaded,
     tabs,
     activeTab,
     activeTabId,
-    setActiveTabId,
-    addTab,
-    closeTab,
-    renameTab,
-    reorderTabs,
-    updateTabCwd,
     activePane,
-    setActivePane,
-    splitPane,
-    closePane,
-    updateRatio,
-    nextPane,
-    prevPane,
-    firstPane,
-    lastPane,
     fontFamily,
-    updateFontFamily,
     fontSize,
-    updateFontSize,
-    totalPanes,
-  } = useLayout({ onNotification: notify });
+    showPaneHeaders,
+  } = layout;
+  const states = useAllPaneStates();
 
+  // ホームディレクトリ（パスの ~ 表記と開始ディレクトリの既定値に使う）
+  useEffect(() => {
+    ptyBridge.getDefaultCwd().then(setHomeDir).catch(() => {});
+  }, []);
 
-  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  const [promptConfig, setPromptConfig] = useState<{
-    isOpen: boolean;
-    title: string;
-    placeholder: string;
-    defaultValue: string;
-    onSubmit: (v: string) => void;
-  }>({
-    isOpen: false,
-    title: "",
-    placeholder: "",
-    defaultValue: "",
-    onSubmit: () => {},
-  });
-  
-
-  const nextTab = useCallback(() => {
-    const idx = tabs.findIndex((t) => t.id === activeTabId);
-    if (idx !== -1) setActiveTabId(tabs[(idx + 1) % tabs.length].id);
-  }, [tabs, activeTabId, setActiveTabId]);
-
-  const prevTab = useCallback(() => {
-    const idx = tabs.findIndex((t) => t.id === activeTabId);
-    if (idx !== -1) setActiveTabId(tabs[(idx - 1 + tabs.length) % tabs.length].id);
-  }, [tabs, activeTabId, setActiveTabId]);
-
-  const openCwdPrompt = useCallback(async () => {
-    // 優先順位: 1. タブに既に設定済みの defaultCwd, 2. システムの CWD
-    const currentDefault = activeTab?.defaultCwd;
-    const systemCwd = await ptyBridge.getCwd();
-    
-    setPromptConfig({
-      isOpen: true,
-      title: "Terminal: Set Start Directory",
-      placeholder: "e.g. C:\\Users\\Name\\Projects",
-      defaultValue: currentDefault || systemCwd || "", 
-      onSubmit: (path) => updateTabCwd(activeTabId, path),
+  // セッションを復元してからウィンドウを表示する（空の画面がちらつかないように）
+  useEffect(() => {
+    if (!isLoaded) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        document.documentElement.style.visibility = "visible";
+        getCurrentWindow().show().catch(() => {});
+      });
     });
-  }, [activeTabId, updateTabCwd, activeTab]);
-  
-  const openFontPrompt = useCallback(() => {
-    setPromptConfig({
-      isOpen: true,
-      title: "Terminal: Set Font Family",
-      placeholder: 'e.g. "Fira Code", "Cascadia Code", monospace',
-      defaultValue: fontFamily,
-      onSubmit: (font) => updateFontFamily(font),
-    });
-  }, [fontFamily, updateFontFamily]);
+  }, [isLoaded]);
 
-  // キーバインドの設定
+  const overlayOpen = overlay !== null || prompt !== null;
+
+  const closeOverlay = useCallback(() => setOverlay(null), []);
+  const closePrompt = useCallback(() => setPrompt(null), []);
+  const toggleOverlay = useCallback(
+    (next: Exclude<Overlay, null>) => setOverlay((cur) => (cur?.kind === next.kind ? null : next)),
+    []
+  );
+
+  const openFind = useCallback(
+    (paneId: string) => {
+      layout.focusPane(paneId);
+      setFindPaneId(paneId);
+    },
+    [layout.focusPane]
+  );
+  const closeFind = useCallback(() => {
+    setFindPaneId((id) => {
+      if (id) requestAnimationFrame(() => focusTerminal(id));
+      return null;
+    });
+  }, []);
+
+  /** テーマを切り替える（押した位置から円形に広がるトランジション付き） */
+  const changeTheme = useCallback(
+    (next: Theme, origin?: { x: number; y: number }) => {
+      if (next !== theme) runThemeTransition(() => setTheme(next), origin);
+    },
+    [theme, setTheme]
+  );
+  const toggleTheme = useCallback(
+    (origin?: { x: number; y: number }) => changeTheme(resolvedTheme === "dark" ? "light" : "dark", origin),
+    [changeTheme, resolvedTheme]
+  );
+
+  const copyText = useCallback(
+    (text: string) => {
+      navigator.clipboard
+        .writeText(text)
+        .then(() => notify("Copied to clipboard", "success"))
+        .catch(() => notify("Could not access the clipboard", "error"));
+    },
+    [notify]
+  );
+
+  const splitActive = useCallback(
+    (direction: "horizontal" | "vertical", shell?: string) => {
+      if (activePane) layout.splitPane(activePane, direction, { shell });
+    },
+    [activePane, layout.splitPane]
+  );
+
+  const openRenamePrompt = useCallback(() => {
+    if (!activeTab) return;
+    setPrompt({
+      title: "Rename tab",
+      description: "Leave empty to name the tab automatically after its active pane.",
+      defaultValue: activeTab.renamed ? activeTab.name : "",
+      placeholder: tabTitle(activeTab, paneStateStore.getAllStates()),
+      onSubmit: (name) => layout.renameTab(activeTab.id, name),
+    });
+  }, [activeTab, layout.renameTab]);
+
+  const handleQuickSwitch = useCallback(
+    (direction: 1 | -1) => {
+      if (layout.totalPanes < 2) return;
+      setOverlay({ kind: "overview", mode: "switch", direction });
+    },
+    [layout.totalPanes]
+  );
+
+  const handleOverviewSelect = useCallback(
+    (paneId: string) => {
+      setOverlay(null);
+      layout.focusPane(paneId);
+    },
+    [layout.focusPane]
+  );
+
+  // キーバインドの設定（既存のキーはすべて維持）
   useKeybinds({
-    onCommandPalette: () => setCommandPaletteOpen((v) => !v),
-    onNewTab: () => addTab(),
-    onNextTab: nextTab,
-    onPrevTab: prevTab,
-    onNextPane: nextPane,
-    onPrevPane: prevPane,
-    onFirstPane: firstPane,
-    onLastPane: lastPane,
-    onSplitHorizontal: (shell) => activePane && splitPane(activePane, "horizontal", { shell }),
-    onSplitVertical: (shell) => activePane && splitPane(activePane, "vertical", { shell }),
-    onClosePane: () => activePane && closePane(activePane),
-    onFontSizeUp: () => updateFontSize(fontSize + 1),
-    onFontSizeDown: () => updateFontSize(fontSize - 1),
-    onFontSizeReset: () => updateFontSize(DEFAULT_FONT_SIZE),
+    overlayOpen,
+    onCommandPalette: () => toggleOverlay({ kind: "palette" }),
+    onPaneOverview: () => toggleOverlay({ kind: "overview", mode: "browse", direction: 1 }),
+    onQuickSwitch: handleQuickSwitch,
+    onShortcutHelp: () => toggleOverlay({ kind: "help" }),
+    onSettings: () => toggleOverlay({ kind: "settings" }),
+    onFind: () => activePane && (findPaneId === activePane ? closeFind() : openFind(activePane)),
+    onNewTab: () => layout.addTab(),
+    onNextTab: layout.nextTab,
+    onPrevTab: layout.prevTab,
+    onGoToTab: layout.goToTab,
+    onNextPane: layout.nextPane,
+    onPrevPane: layout.prevPane,
+    onFirstPane: layout.firstPane,
+    onLastPane: layout.lastPane,
+    onSplitHorizontal: (shell) => splitActive("horizontal", shell),
+    onSplitVertical: (shell) => splitActive("vertical", shell),
+    onClosePane: () => activePane && layout.closePane(activePane),
+    onToggleZoom: layout.toggleZoom,
+    onFontSizeUp: () => layout.updateFontSize((s) => s + 1),
+    onFontSizeDown: () => layout.updateFontSize((s) => s - 1),
+    onFontSizeReset: () => layout.updateFontSize(DEFAULT_FONT_SIZE),
   });
 
-  const commands: CommandItem[] = useMemo(() => [
-    { id: "new-tab", label: "Create New Tab", shortcut: "Ctrl+Shift+T", category: "GENERAL", action: addTab },
-    { id: "set-cwd", label: "Set Start Directory", category: "TERMINAL", action: openCwdPrompt },
-    { id: "set-font", label: "Set Font Family", category: "TERMINAL", action: openFontPrompt },
-    { id: "font-size-up", label: `Font Size: Increase (${fontSize}px)`, shortcut: "Ctrl+Shift+^", category: "TERMINAL", action: () => updateFontSize(fontSize + 1) },
-    { id: "font-size-down", label: `Font Size: Decrease (${fontSize}px)`, shortcut: "Ctrl+Shift+-", category: "TERMINAL", action: () => updateFontSize(fontSize - 1) },
-    { id: "font-size-reset", label: "Font Size: Reset to Default", shortcut: "Ctrl+0", category: "TERMINAL", action: () => updateFontSize(DEFAULT_FONT_SIZE) },
-    { id: "split-h-cmd", label: "Split Vertically (CMD)", shortcut: "Ctrl+Shift+D", category: "LAYOUT", action: () => activePane && splitPane(activePane, "horizontal", { shell: "cmd.exe" }) },
-    { id: "split-h-ps", label: "Split Vertically (PowerShell)", shortcut: "Ctrl+Alt+D", category: "LAYOUT", action: () => activePane && splitPane(activePane, "horizontal", { shell: "pwsh.exe" }) },
-    { id: "split-v-cmd", label: "Split Horizontally (CMD)", shortcut: "Ctrl+Shift+E", category: "LAYOUT", action: () => activePane && splitPane(activePane, "vertical", { shell: "cmd.exe" }) },
-    { id: "split-v-ps", label: "Split Horizontally (PowerShell)", shortcut: "Ctrl+Alt+E", category: "LAYOUT", action: () => activePane && splitPane(activePane, "vertical", { shell: "pwsh.exe" }) },
-    { id: "close-pane", label: "Close Pane", shortcut: "Ctrl+Shift+W", category: "LAYOUT", action: () => activePane && closePane(activePane) },
-    { id: "close-tab", label: "Close Tab", category: "GENERAL", action: () => activeTabId && closeTab(activeTabId) },
-    { id: "next-pane", label: "Next Pane", shortcut: "Ctrl+Shift+N/↓", category: "LAYOUT", action: nextPane },
-    { id: "prev-pane", label: "Previous Pane", shortcut: "Ctrl+Shift+P/↑", category: "LAYOUT", action: prevPane },
-    { id: "next-tab", label: "Next Tab", shortcut: "Ctrl+Shift+F/→", category: "GENERAL", action: nextTab },
-    { id: "prev-tab", label: "Previous Tab", shortcut: "Ctrl+Shift+B/←", category: "GENERAL", action: prevTab },
-    { id: "theme-dark", label: "Theme: Dark (Midnight)", category: "THEME", action: () => setTheme("dark") },
-    { id: "theme-light", label: "Theme: Light (Daylight)", category: "THEME", action: () => setTheme("light") },
-    { id: "theme-system", label: "Theme: Follow System", category: "THEME", action: () => setTheme("system") },
-  ], [activePane, splitPane, closePane, addTab, closeTab, activeTabId, nextTab, prevTab, nextPane, prevPane, setTheme, openCwdPrompt, openFontPrompt, fontSize, updateFontSize]);
+  const paneActions: PaneActions = useMemo(
+    () => ({
+      focusPane: layout.focusPane,
+      splitPane: (paneId, direction, options) => void layout.splitPane(paneId, direction, options),
+      closePane: layout.closePane,
+      toggleZoom: layout.toggleZoom,
+      movePaneToNewTab: layout.movePaneToNewTab,
+      openFind,
+      closeFind,
+      updateRatio: layout.updateRatio,
+    }),
+    [layout.focusPane, layout.splitPane, layout.closePane, layout.toggleZoom, layout.movePaneToNewTab, openFind, closeFind, layout.updateRatio]
+  );
 
+  const paneUi: PaneUi = useMemo(
+    () => ({
+      fontFamily,
+      fontSize,
+      terminalTheme,
+      showHeaders: showPaneHeaders,
+      findPaneId,
+      homeDir,
+      overlayOpen,
+      preferences: layout.preferences,
+    }),
+    [fontFamily, fontSize, terminalTheme, showPaneHeaders, findPaneId, homeDir, overlayOpen, layout.preferences]
+  );
+
+  const activePaneNode = activeTab ? findPane(activeTab.layout, activePane) : undefined;
+  const multiPane = activeTab ? activeTab.layout.type !== "pane" : false;
+
+  // ペイン・タブへのジャンプ項目（検索語があるときだけパレットに出る）
+  const gotoCommands: CommandItem[] = useMemo(
+    () =>
+      tabs.flatMap((tab, tabIndex) => {
+        const label = tabTitle(tab, states);
+        const panes = collectPanes(tab.layout);
+        const tabItem: CommandItem = {
+          id: `goto-tab-${tab.id}`,
+          label: `Tab ${tabIndex + 1}: ${label}`,
+          description: `${panes.length} pane${panes.length > 1 ? "s" : ""}`,
+          category: GOTO_CATEGORY,
+          shortcut: tabIndex < 9 ? `Ctrl+Alt+${tabIndex + 1}` : undefined,
+          action: () => layout.setActiveTabId(tab.id),
+        };
+        const paneItems = panes.map((pane): CommandItem => {
+          const state = states[pane.id];
+          const cwd = state?.cwd ?? pane.cwd;
+          return {
+            id: `goto-pane-${pane.id}`,
+            label: `${paneTitle(pane, state)} — ${label}`,
+            description: shortenPath(cwd, homeDir),
+            keywords: `${cwd ?? ""} ${state?.title ?? ""} ${pane.shell ?? ""}`,
+            category: GOTO_CATEGORY,
+            action: () => layout.focusPane(pane.id),
+          };
+        });
+        return [tabItem, ...(panes.length > 1 ? paneItems : [])];
+      }),
+    [tabs, states, homeDir, layout.setActiveTabId, layout.focusPane]
+  );
+
+  const commands: CommandItem[] = useMemo(
+    () => [
+      { id: "overview", label: "Show Pane Overview", shortcut: KEYS.overview, category: "View", keywords: "expose mission control all panes switch", action: () => setOverlay({ kind: "overview", mode: "browse", direction: 1 }) },
+      { id: "shortcuts", label: "Show Keyboard Shortcuts", shortcut: KEYS.help, category: "View", keywords: "help keys", action: () => setOverlay({ kind: "help" }) },
+      { id: "toggle-headers", label: showPaneHeaders ? "Hide Pane Headers" : "Show Pane Headers", category: "View", action: layout.togglePaneHeaders },
+      { id: "new-tab", label: "New Tab (Command Prompt)", shortcut: KEYS.newTab, category: "Tab", action: () => layout.addTab(DEFAULT_SHELL) },
+      { id: "new-tab-pwsh", label: "New Tab (PowerShell)", category: "Tab", action: () => layout.addTab(PWSH_SHELL) },
+      { id: "rename-tab", label: "Rename Tab…", category: "Tab", action: openRenamePrompt },
+      { id: "next-tab", label: "Next Tab", shortcut: KEYS.nextTab, category: "Tab", action: layout.nextTab },
+      { id: "prev-tab", label: "Previous Tab", shortcut: KEYS.prevTab, category: "Tab", action: layout.prevTab },
+      { id: "close-tab", label: "Close Tab", category: "Tab", action: () => activeTabId && layout.closeTab(activeTabId) },
+      { id: "close-other-tabs", label: "Close Other Tabs", category: "Tab", action: () => activeTabId && layout.closeOtherTabs(activeTabId) },
+      { id: "split-right-cmd", label: "Split Right (Command Prompt)", shortcut: KEYS.splitRightCmd, category: "Pane", action: () => splitActive("horizontal", DEFAULT_SHELL) },
+      { id: "split-down-cmd", label: "Split Down (Command Prompt)", shortcut: KEYS.splitDownCmd, category: "Pane", action: () => splitActive("vertical", DEFAULT_SHELL) },
+      { id: "split-right-ps", label: "Split Right (PowerShell)", shortcut: KEYS.splitRightPwsh, category: "Pane", action: () => splitActive("horizontal", PWSH_SHELL) },
+      { id: "split-down-ps", label: "Split Down (PowerShell)", shortcut: KEYS.splitDownPwsh, category: "Pane", action: () => splitActive("vertical", PWSH_SHELL) },
+      { id: "zoom", label: activeTab?.zoomed ? "Restore Pane Layout" : "Zoom Pane", shortcut: KEYS.zoom, category: "Pane", keywords: "maximize", action: layout.toggleZoom },
+      { id: "equalize", label: "Equalize Pane Sizes", category: "Pane", keywords: "balance even", action: layout.equalizePanes },
+      { id: "move-to-tab", label: "Move Pane to New Tab", category: "Pane", keywords: "break detach", action: () => activePane && layout.movePaneToNewTab(activePane) },
+      { id: "next-pane", label: "Next Pane", shortcut: KEYS.nextPane, category: "Pane", action: layout.nextPane },
+      { id: "prev-pane", label: "Previous Pane", shortcut: KEYS.prevPane, category: "Pane", action: layout.prevPane },
+      { id: "first-pane", label: "First Pane", shortcut: KEYS.firstPane, category: "Pane", action: layout.firstPane },
+      { id: "last-pane", label: "Last Pane", shortcut: KEYS.lastPane, category: "Pane", action: layout.lastPane },
+      { id: "close-pane", label: "Close Pane", shortcut: KEYS.closePane, category: "Pane", action: () => activePane && layout.closePane(activePane) },
+      { id: "find", label: "Find in Terminal", shortcut: KEYS.find, category: "Terminal", keywords: "search", action: () => activePane && openFind(activePane) },
+      { id: "clear", label: "Clear Scrollback", category: "Terminal", action: () => activePane && clearTerminal(activePane) },
+      { id: "restart", label: "Restart Shell", category: "Terminal", keywords: "respawn reload", action: () => activePane && restartTerminal(activePane) },
+      {
+        id: "copy-cwd",
+        label: "Copy Current Directory Path",
+        category: "Terminal",
+        action: () => {
+          const cwd = paneStateStore.getPaneState(activePane).cwd ?? activePaneNode?.cwd;
+          if (cwd) copyText(cwd);
+          else notify("The current directory of this pane is not known yet", "info");
+        },
+      },
+      { id: "settings", label: "Open Settings", shortcut: KEYS.settings, category: "Settings", keywords: "preferences font cursor start directory cwd", action: () => setOverlay({ kind: "settings" }) },
+      { id: "font-size-up", label: "Increase Font Size", description: `${fontSize}px`, shortcut: KEYS.fontUp, category: "Settings", keywords: "zoom in", action: () => layout.updateFontSize((s) => s + 1) },
+      { id: "font-size-down", label: "Decrease Font Size", description: `${fontSize}px`, shortcut: KEYS.fontDown, category: "Settings", keywords: "zoom out", action: () => layout.updateFontSize((s) => s - 1) },
+      { id: "font-size-reset", label: "Reset Font Size", shortcut: KEYS.fontReset, category: "Settings", action: () => layout.updateFontSize(DEFAULT_FONT_SIZE) },
+      { id: "theme-toggle", label: resolvedTheme === "dark" ? "Switch to Light Theme" : "Switch to Dark Theme", category: "Theme", keywords: "night day mode", action: () => toggleTheme() },
+      { id: "theme-dark", label: "Theme: Midnight (Dark)", category: "Theme", action: () => changeTheme("dark") },
+      { id: "theme-light", label: "Theme: Daylight (Light)", category: "Theme", action: () => changeTheme("light") },
+      { id: "theme-system", label: "Theme: Follow System", category: "Theme", action: () => changeTheme("system") },
+      ...gotoCommands,
+    ],
+    [
+      layout, activeTab, activeTabId, activePane, activePaneNode, fontSize, showPaneHeaders, gotoCommands,
+      splitActive, openFind, openRenamePrompt, copyText, notify, changeTheme, toggleTheme, resolvedTheme,
+    ]
+  );
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden rounded-lg bg-bg-main shadow-2xl transition-colors duration-500">
-      <TitleBar sessionName={`elecxterm@${__APP_VERSION__}`} />
-      
-      <TabBar
-        tabs={tabs}
-        activeTabId={activeTabId}
-        onTabSelect={setActiveTabId}
-        onTabClose={closeTab}
-        onTabRename={renameTab}
-        onTabReorder={reorderTabs}
-        onTabAdd={() => addTab()}
-      />
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-bg-main">
+      <TitleBar
+        resolvedTheme={resolvedTheme}
+        onToggleTheme={toggleTheme}
+        onSettings={() => toggleOverlay({ kind: "settings" })}
+        onOverview={() => toggleOverlay({ kind: "overview", mode: "browse", direction: 1 })}
+        onPalette={() => toggleOverlay({ kind: "palette" })}
+      >
+        <TabBar
+          tabs={tabs}
+          activeTabId={activeTabId}
+          onTabSelect={layout.setActiveTabId}
+          onTabClose={layout.closeTab}
+          onCloseOthers={layout.closeOtherTabs}
+          onTabColor={layout.setTabColor}
+          onTabRename={(id, name) => {
+            layout.renameTab(id, name);
+            if (activePane) requestAnimationFrame(() => focusTerminal(activePane));
+          }}
+          onTabReorder={layout.reorderTabs}
+          onTabAdd={(shell) => layout.addTab(shell)}
+        />
+      </TitleBar>
 
-      <div className="flex-1 overflow-hidden p-2 relative">
-        {tabs.map((tab) => (
-          <TabContent
-            key={tab.id}
-            layout={tab.layout}
-            activePane={tab.activePaneId}
-            isActive={tab.id === activeTabId}
-            fontFamily={fontFamily}
-            fontSize={fontSize}
-            onPaneActivate={setActivePane}
-            onRatioChange={updateRatio}
-          />
-        ))}
-      </div>
+      <PaneActionsContext.Provider value={paneActions}>
+        <PaneUiContext.Provider value={paneUi}>
+          <main className="relative flex-1 overflow-hidden p-1.5">
+            <div className="relative h-full w-full">
+              {tabs.map((tab) => (
+                <TabContent key={tab.id} tab={tab} isActive={tab.id === activeTabId} />
+              ))}
+            </div>
+          </main>
+        </PaneUiContext.Provider>
+      </PaneActionsContext.Provider>
 
       <StatusBar
-        activeTabNumber={tabs.findIndex((t) => t.id === activeTabId) + 1}
-        totalTabs={tabs.length}
-        totalPanes={totalPanes}
+        activePane={activePaneNode}
+        zoomed={multiPane && !!activeTab?.zoomed}
+        totalPanes={layout.totalPanes}
         maxPanes={MAX_PANES}
+        fontSize={fontSize}
+        homeDir={homeDir}
+        onShowHelp={() => setOverlay({ kind: "help" })}
+        onShowOverview={() => setOverlay({ kind: "overview", mode: "browse", direction: 1 })}
+        onToggleZoom={layout.toggleZoom}
+        onCopyPath={copyText}
       />
 
-      <CommandPalette
-        isOpen={commandPaletteOpen}
-        onClose={() => setCommandPaletteOpen(false)}
-        commands={commands}
+      <PaneOverview
+        open={overlay?.kind === "overview"}
+        mode={overlay?.kind === "overview" ? overlay.mode : "browse"}
+        initialDirection={overlay?.kind === "overview" ? overlay.direction : 1}
+        tabs={tabs}
+        activeTabId={activeTabId}
+        homeDir={homeDir}
+        onSelect={handleOverviewSelect}
+        onClosePane={layout.closePane}
+        onNewTab={() => {
+          setOverlay(null);
+          layout.addTab();
+        }}
+        onDismiss={closeOverlay}
       />
 
-      <Prompt
-        isOpen={promptConfig.isOpen}
-        onClose={() => setPromptConfig(prev => ({ ...prev, isOpen: false }))}
-        title={promptConfig.title}
-        placeholder={promptConfig.placeholder}
-        defaultValue={promptConfig.defaultValue}
-        onSubmit={promptConfig.onSubmit}
+      <CommandPalette isOpen={overlay?.kind === "palette"} onClose={closeOverlay} commands={commands} />
+      <ShortcutHelp open={overlay?.kind === "help"} onClose={closeOverlay} />
+      <SettingsPanel
+        open={overlay?.kind === "settings"}
+        onClose={closeOverlay}
+        theme={theme}
+        onThemeChange={(next) => changeTheme(next)}
+        fontFamily={fontFamily}
+        onFontFamilyChange={layout.updateFontFamily}
+        fontSize={fontSize}
+        onFontSizeChange={layout.updateFontSize}
+        preferences={layout.preferences}
+        onPreferencesChange={layout.updatePreferences}
+        showPaneHeaders={showPaneHeaders}
+        onShowPaneHeadersChange={layout.setShowPaneHeaders}
+        startDirectory={activeTab?.defaultCwd ?? layout.appDefaultCwd ?? ""}
+        onStartDirectoryChange={(dir) => activeTab && layout.updateTabCwd(activeTab.id, dir)}
+        currentDirectory={states[activePane]?.cwd ?? activePaneNode?.cwd}
       />
-
-      <NotificationOverlay message={notification} onClear={clearNotification} />
+      <Prompt request={prompt} onClose={closePrompt} />
+      <NotificationOverlay toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

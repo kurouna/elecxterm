@@ -1,295 +1,313 @@
-import { memo, useEffect, useRef, useCallback, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
-import { ptyBridge } from "../pty-bridge";
+import { AnimatePresence, motion } from "framer-motion";
+import { ArrowDown, Bell, Columns2, Maximize2, Minimize2, RotateCcw, Rows2, Search, SquareArrowOutUpRight, X } from "lucide-react";
 import { PaneNode } from "../types";
-import { useTheme } from "../ThemeContext";
 import { usePaneState } from "../hooks/usePaneState";
-import { useTabVisibility } from "./TabContent";
+import { usePaneActions, usePaneUi, useTabInfo } from "./PaneContext";
 import {
   applyAppearance,
-  getOrCreateTerminal,
-  TerminalDestroyedError,
+  attachTerminal,
+  focusTerminal,
+  restartTerminal,
   TerminalEntry,
 } from "../services/terminalRegistry";
+import { paneTitle, shortenPath } from "../services/paneInfo";
+import { KEYS } from "../keymap";
+import { FindBar } from "./FindBar";
+import { IconButton, ShellBadge, StatusDot } from "./ui";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalPaneProps {
   pane: PaneNode;
   isActive: boolean;
-  fontFamily: string;
-  fontSize: number;
-  onActivate: (id: string) => void;
 }
 
-const DARK_THEME = {
-  background: "#05070a",
-  foreground: "#f8fafc",
-  cursor: "#818cf8",
-  cursorAccent: "#05070a",
-  selectionBackground: "rgba(129, 140, 248, 0.35)",
-  selectionForeground: "#ffffff",
-  scrollbarSliderBackground: "rgba(148, 163, 184, 0.25)",
-  scrollbarSliderHoverBackground: "rgba(129, 140, 248, 0.55)",
-  scrollbarSliderActiveBackground: "rgba(129, 140, 248, 0.8)",
-  black: "#0f172a",
-  red: "#f87171",
-  green: "#4ade80",
-  yellow: "#fbbf24",
-  blue: "#818cf8",
-  magenta: "#c084fc",
-  cyan: "#22d3ee",
-  white: "#f1f5f9",
-  brightBlack: "#475569",
-  brightRed: "#fca5a5",
-  brightGreen: "#86efac",
-  brightYellow: "#fde68a",
-  brightBlue: "#a5b4fc",
-  brightMagenta: "#d8b4fe",
-  brightCyan: "#67e8f9",
-  brightWhite: "#ffffff",
-};
+/** コンテナ寸法が落ち着いてから fit する遅延（ドラッグ中の連続 fit によるチラつきを防ぐ） */
+const RESIZE_SETTLE_MS = 60;
 
-const LIGHT_THEME = {
-  background: "#ffffff",
-  foreground: "#1e293b",
-  cursor: "#2563eb",
-  cursorAccent: "#ffffff",
-  selectionBackground: "rgba(37, 99, 235, 0.15)",
-  selectionForeground: "#1e293b",
-  scrollbarSliderBackground: "rgba(51, 65, 85, 0.25)",
-  scrollbarSliderHoverBackground: "rgba(37, 99, 235, 0.5)",
-  scrollbarSliderActiveBackground: "rgba(37, 99, 235, 0.75)",
-  black: "#0f172a",
-  red: "#be123c",
-  green: "#15803d",
-  yellow: "#a16207",
-  blue: "#1d4ed8",
-  magenta: "#7e22ce",
-  cyan: "#0e7490",
-  white: "#475569",
-  brightBlack: "#64748b",
-  brightRed: "#e11d48",
-  brightGreen: "#16a34a",
-  brightYellow: "#ca8a04",
-  brightBlue: "#2563eb",
-  brightMagenta: "#9333ea",
-  brightCyan: "#0891b2",
-  brightWhite: "#0f172a",
-};
+function TerminalPaneComponent({ pane, isActive }: TerminalPaneProps) {
+  const { tabId, isTabActive, multiPane, zoomed } = useTabInfo();
+  const ui = usePaneUi();
+  const actions = usePaneActions();
+  const state = usePaneState(pane.id);
 
-function TerminalPaneComponent({
-  pane,
-  isActive,
-  fontFamily,
-  fontSize,
-  onActivate,
-}: TerminalPaneProps) {
-  const { resolvedTheme } = useTheme();
-  const { isActive: isTabActive } = useTabVisibility();
-  const theme = resolvedTheme === "dark" ? DARK_THEME : LIGHT_THEME;
-
-  // click ではなく pointerdown で切り替える。ドラッグ選択を始めた瞬間に
-  // そのペインがアクティブになり、選択のためのドラッグが終わるまで
-  // フォーカス枠が動かない、という違和感を防ぐ。
-  const handlePointerDown = useCallback(() => {
-    onActivate(pane.id);
-  }, [onActivate, pane.id]);
-
-  const containerRef = useRef<HTMLDivElement>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
+  const [entry, setEntry] = useState<TerminalEntry | null>(null);
   const entryRef = useRef<TerminalEntry | null>(null);
-  // getOrCreateTerminal は非同期（PTY 生成 IPC を含む）なので、マウント直後は
-  // entryRef が null。フォーカス effect に完了を伝えるためのフラグ。
-  const [entryReady, setEntryReady] = useState(false);
+  const [scrolledUp, setScrolledUp] = useState(false);
 
-  const { status: volatileStatus } = usePaneState(pane.id);
+  const appearance = {
+    fontFamily: ui.fontFamily,
+    fontSize: ui.fontSize,
+    lineHeight: ui.preferences.lineHeight,
+    cursorStyle: ui.preferences.cursorStyle,
+    cursorBlink: ui.preferences.cursorBlink,
+    theme: ui.terminalTheme,
+  };
 
-  /**
-   * フィット + PTY サイズ通知。xterm 側が適切なタイミングで
-   * 自前の再描画を行うため、ここでは `refresh()` を呼ばない。
-   * 明示的な `refresh()` は WebGL キャンバスの一瞬のクリアを誘発し、
-   * タブ/ペイン切替時のフラッシュの原因になる。
-   */
-  const fitAndResize = useCallback(() => {
-    const entry = entryRef.current;
-    if (!entry) return;
+  const fit = useCallback(() => {
+    const current = entryRef.current;
+    // 非表示タブ（visibility: hidden）でもサイズは保たれるが、0 サイズの時は測れないので飛ばす
+    if (!current || !hostRef.current?.clientWidth) return;
     try {
-      entry.fitAddon.fit();
+      // 寸法が変われば xterm の onResize 経由で PTY にも通知される
+      current.fitAddon.fit();
     } catch {
-      return;
+      // 破棄直後などは無視
     }
-    ptyBridge
-      .resize(pane.id, entry.terminal.rows, entry.terminal.cols)
-      .catch(() => {});
-  }, [pane.id]);
+  }, []);
 
-  // 1. Registry から Terminal を取得してホスト要素に貼り付ける。
+  // 1. Registry から Terminal を取得してホスト要素に貼り付ける（無ければ生成）。
   //    アンマウント時は Terminal を破棄せず DOM から外すだけ。これにより
-  //    レイアウトツリー再構築で TerminalPane が再マウントされても
-  //    同じ xterm/PTY を継続利用でき、カレントディレクトリがリセットされない。
-  useEffect(() => {
-    const host = containerRef.current;
+  //    レイアウトツリー再構築で再マウントされても同じ xterm/PTY を継続利用でき、
+  //    カレントディレクトリやスクロールバックが失われない。破棄は closePane/closeTab が行う。
+  useLayoutEffect(() => {
+    const host = hostRef.current;
     if (!host) return;
-    let cancelled = false;
-
-    getOrCreateTerminal({
+    const attached = attachTerminal(host, {
       paneId: pane.id,
       cwd: pane.cwd,
       shell: pane.shell,
-      fontFamily,
-      fontSize,
-      theme,
-    })
-      .then((entry) => {
-        if (cancelled) return;
-        entryRef.current = entry;
-        host.appendChild(entry.rootEl);
-        setEntryReady(true);
-        // 再アタッチ直後はホストのサイズが変わっている可能性があるので一度 fit
-        requestAnimationFrame(() => {
-          if (!cancelled) fitAndResize();
-        });
-      })
-      .catch((e) => {
-        // 生成中にペインが閉じられた場合は正常なキャンセル
-        if (cancelled || e instanceof TerminalDestroyedError) return;
-        console.error("Terminal setup error:", e);
-      });
-
+      ...appearance,
+    });
+    entryRef.current = attached;
+    setEntry(attached);
+    const raf = requestAnimationFrame(fit);
     return () => {
-      cancelled = true;
-      // Terminal は破棄せず DOM から切り離すだけ。破棄は closePane/closeTab が行う。
-      entryRef.current?.rootEl.remove();
+      cancelAnimationFrame(raf);
+      attached.rootEl.remove();
       entryRef.current = null;
-      setEntryReady(false);
     };
     // pane.id 以外のプロパティは初回生成時にだけ反映。以降は個別 effect で更新する
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pane.id]);
 
-  // 2. 見た目（テーマ・フォント）の同期。
-  //    entryReady を依存に含めるのは、Terminal 生成（非同期）の最中に
-  //    テーマやフォントが切り替わった場合の取りこぼしを防ぐため。
-  //    applyAppearance は実際に変化した項目だけを代入するので、
-  //    ペイン再アタッチのたびに無駄な再描画（WebGL の一瞬のクリア）は起きない。
-  //    文字寸法が変わったときだけ fit する。
-  useEffect(() => {
-    const entry = entryRef.current;
+  // 2. 見た目（テーマ・フォント・カーソル）の同期。実際に変化した項目だけを反映し、
+  //    文字寸法が変わったときだけ fit する。テーマ切り替えの View Transition が
+  //    新しい色で撮影されるよう、描画前（layout effect）に適用する。
+  useLayoutEffect(() => {
     if (!entry) return;
-    if (applyAppearance(entry, { fontFamily, fontSize, theme })) {
-      fitAndResize();
-    }
-  }, [fontFamily, fontSize, theme, entryReady, fitAndResize]);
+    if (applyAppearance(entry, appearance)) fit();
+    // appearance は下の各値から毎回組み立てているだけなので、値で依存を取る
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entry, ui.fontFamily, ui.fontSize, ui.terminalTheme, ui.preferences, fit]);
 
-  // 5. アクティブペイン & アクティブタブのときのみフォーカス。
-  //    新規タブ/ペインでは Terminal 生成（非同期）完了前に発火しても
-  //    entryRef が null で空振りするため、entryReady も依存に含めて
-  //    生成完了時に再実行させる。
+  // 5. スクロールバックを遡っている間は「最下部へ戻る」ボタンを出す
   useEffect(() => {
-    if (!isActive || !isTabActive || !entryReady) return;
-    const raf = requestAnimationFrame(() => {
-      entryRef.current?.terminal.focus();
-    });
+    if (!entry) return;
+    const { terminal } = entry;
+    const update = () => {
+      const buffer = terminal.buffer.active;
+      setScrolledUp(buffer.viewportY < buffer.baseY);
+    };
+    const subs = [terminal.onScroll(update), terminal.onWriteParsed(update)];
+    entry.rootEl.addEventListener("wheel", update, { passive: true });
+    update();
+    return () => {
+      subs.forEach((d) => d.dispose());
+      entry.rootEl.removeEventListener("wheel", update);
+    };
+  }, [entry]);
+
+  // 3. アクティブペイン & アクティブタブのときだけフォーカス（検索バーを開いている間は譲る）
+  const findOpen = ui.findPaneId === pane.id && entry !== null;
+  useEffect(() => {
+    if (!isActive || !isTabActive || !entry || findOpen || ui.overlayOpen) return;
+    const raf = requestAnimationFrame(() => focusTerminal(pane.id));
     return () => cancelAnimationFrame(raf);
-  }, [isActive, isTabActive, entryReady]);
+  }, [isActive, isTabActive, entry, findOpen, ui.overlayOpen, pane.id]);
 
-  // 6. ResizeObserver — コンテナ寸法が落ち着いたタイミングで一度だけ fit
+  // 4. コンテナのリサイズに追従
   useEffect(() => {
-    const host = containerRef.current;
+    const host = hostRef.current;
     if (!host) return;
-    const RESIZE_SETTLE_MS = 100;
-    let resizeTimeoutId: number | null = null;
+    let timer: number | null = null;
     const observer = new ResizeObserver(() => {
-      if (resizeTimeoutId !== null) window.clearTimeout(resizeTimeoutId);
-      resizeTimeoutId = window.setTimeout(() => {
-        resizeTimeoutId = null;
-        fitAndResize();
+      if (timer !== null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        timer = null;
+        fit();
       }, RESIZE_SETTLE_MS);
     });
     observer.observe(host);
     return () => {
-      if (resizeTimeoutId !== null) window.clearTimeout(resizeTimeoutId);
+      if (timer !== null) window.clearTimeout(timer);
       observer.disconnect();
     };
-  }, [fitAndResize]);
+  }, [fit]);
 
-  // 7. 右クリックでペースト（多くのターミナルエミュレータ共通の作法）。
-  //    選択中は「選択のコピー」が優先されるため、ペーストは選択が無いときだけ行う。
-  const handleContextMenu = useCallback(
-    async (e: ReactMouseEvent) => {
-      e.preventDefault();
-      const entry = entryRef.current;
-      if (!entry) return;
+  // click ではなく pointerdown で切り替える。ドラッグ選択を始めた瞬間に
+  // そのペインがアクティブになり、選択のためのドラッグが終わるまで
+  // フォーカス枠が動かない、という違和感を防ぐ。
+  const handlePointerDown = useCallback(() => actions.focusPane(pane.id), [actions, pane.id]);
 
-      const selection = entry.terminal.getSelection();
-      if (selection) {
-        await navigator.clipboard.writeText(selection).catch(() => {});
-        entry.terminal.clearSelection();
-        return;
-      }
+  // 右クリック: 選択があればコピー、無ければペースト（多くのターミナルエミュレータ共通の作法）
+  const handleContextMenu = useCallback(async (e: ReactMouseEvent) => {
+    e.preventDefault();
+    const terminal = entryRef.current?.terminal;
+    if (!terminal) return;
+    const selection = terminal.getSelection();
+    if (selection) {
+      await navigator.clipboard.writeText(selection).catch(() => {});
+      terminal.clearSelection();
+      return;
+    }
+    try {
+      const text = await navigator.clipboard.readText();
+      // bracketed paste mode の制御シーケンス付与を xterm に任せる
+      if (text) terminal.paste(text);
+    } catch {
+      // クリップボード権限が無い環境では黙って無視する
+    }
+  }, []);
 
-      try {
-        const text = await navigator.clipboard.readText();
-        // ptyBridge.write に直接流さず terminal.paste を使う。
-        // bracketed paste mode の制御シーケンス付与を xterm に任せられる。
-        if (text) entry.terminal.paste(text);
-      } catch {
-        // クリップボード権限が無い環境では黙って無視する
-      }
-    },
-    []
-  );
-
-  const borderClass =
-    volatileStatus === "error"
-      ? "border-border-error shadow-[0_0_10px_rgba(220,38,38,0.3)]"
-      : isActive
-        ? "border-accent shadow-[0_0_12px_var(--color-accent-dim)]"
-        : "border-border-dim";
+  const title = paneTitle(pane, state);
+  const cwd = shortenPath(state.cwd ?? pane.cwd, ui.homeDir);
+  const shell = state.shell ?? pane.shell;
+  const ended = state.status === "exited" || state.status === "error";
+  const dim = multiPane && !zoomed && !isActive && ui.preferences.dimInactive !== "off";
 
   return (
     <div
-      className={`terminal-container relative h-full w-full overflow-hidden rounded-md border transition-[border-color,box-shadow] duration-200 ${borderClass}`}
+      className={`pane group/pane relative flex h-full w-full flex-col overflow-hidden rounded-lg border bg-bg-main transition-[border-color,box-shadow] duration-150 ${
+        state.status === "error"
+          ? "border-danger/70"
+          : isActive && multiPane
+            ? "border-accent/70 shadow-[0_0_0_1px_var(--accent-dim)]"
+            : "border-border-dim"
+      }`}
       onPointerDown={handlePointerDown}
-      onContextMenu={handleContextMenu}
       role="group"
-      aria-label={`Terminal pane (${volatileStatus})`}
+      aria-label={`Terminal: ${title}`}
       data-pane-id={pane.id}
-      data-active={isActive || undefined}
-      style={{
-        backgroundColor: "var(--bg-main)",
-      }}
+      data-tab-id={tabId}
+      data-dim={dim ? ui.preferences.dimInactive : undefined}
     >
-      <div
-        className={`absolute top-1 right-2 z-10 flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-tx-primary/5 transition-colors duration-200 ${
-          isActive && volatileStatus === "running"
-            ? "bg-bg-main/80 shadow-sm backdrop-blur-md"
-            : "bg-bg-main/20 backdrop-blur-sm"
-        }`}
-      >
+      {ui.showHeaders && (
         <div
-          className={`h-1.5 w-1.5 rounded-full ${
-            volatileStatus === "running" ? "bg-[#22c55e]" : "bg-[#ef4444]"
-          } ${
-            isActive && volatileStatus === "running"
-              ? "shadow-[0_0_8px_#22c55e] animate-pulse"
-              : ""
+          className={`flex h-[26px] shrink-0 items-center gap-2 border-b px-2 text-[11.5px] ${
+            isActive ? "border-border-dim bg-bg-surface" : "border-transparent bg-bg-main"
           }`}
-        />
-        {isActive && volatileStatus === "running" && (
-          <span
-            className="text-[8px] font-bold text-[#22c55e] uppercase tracking-widest leading-none"
-            style={{ marginTop: "1px" }}
+          onDoubleClick={() => multiPane && actions.toggleZoom()}
+        >
+          <StatusDot status={state.status} activity={state.activity && !isActive} />
+          <ShellBadge shell={shell} />
+          <span className={`truncate font-medium ${isActive ? "text-tx-primary" : "text-tx-secondary"}`}>{title}</span>
+          {cwd && title !== cwd && (
+            <span className="min-w-0 truncate font-mono text-[10.5px] text-tx-muted" title={state.cwd ?? pane.cwd}>
+              {cwd}
+            </span>
+          )}
+          {state.bell && !isActive && <Bell size={12} className="shrink-0 text-warning" aria-label="Bell" />}
+          {ended && (
+            <span className={`shrink-0 rounded px-1 text-[10px] font-semibold ${state.status === "error" ? "bg-danger/15 text-danger" : "bg-tx-muted/15 text-tx-muted"}`}>
+              {state.status === "error" ? "failed" : `exited${state.exitCode != null ? ` ${state.exitCode}` : ""}`}
+            </span>
+          )}
+          <div
+            className={`ml-auto flex shrink-0 items-center gap-0.5 transition-opacity ${
+              isActive ? "opacity-100" : "opacity-0 group-hover/pane:opacity-100"
+            }`}
+            onPointerDown={(e) => e.stopPropagation()}
           >
-            Active
-          </span>
+            <IconButton size="sm" label="Find" shortcut={KEYS.find} onClick={() => actions.openFind(pane.id)}>
+              <Search size={12} />
+            </IconButton>
+            <IconButton size="sm" label="Split right" shortcut={KEYS.splitRightCmd} onClick={() => actions.splitPane(pane.id, "horizontal")}>
+              <Columns2 size={12} />
+            </IconButton>
+            <IconButton size="sm" label="Split down" shortcut={KEYS.splitDownCmd} onClick={() => actions.splitPane(pane.id, "vertical")}>
+              <Rows2 size={12} />
+            </IconButton>
+            {multiPane && (
+              <>
+                <IconButton
+                  size="sm"
+                  label={zoomed ? "Restore layout" : "Zoom pane"}
+                  shortcut={KEYS.zoom}
+                  active={zoomed}
+                  onClick={() => {
+                    actions.focusPane(pane.id);
+                    actions.toggleZoom();
+                  }}
+                >
+                  {zoomed ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+                </IconButton>
+                <IconButton size="sm" label="Move to new tab" onClick={() => actions.movePaneToNewTab(pane.id)}>
+                  <SquareArrowOutUpRight size={12} />
+                </IconButton>
+              </>
+            )}
+            <IconButton
+              size="sm"
+              label="Close pane"
+              shortcut={KEYS.closePane}
+              className="hover:!bg-danger/15 hover:!text-danger"
+              onClick={() => actions.closePane(pane.id)}
+            >
+              <X size={13} />
+            </IconButton>
+          </div>
+        </div>
+      )}
+
+      <div className="relative min-h-0 flex-1" onContextMenu={handleContextMenu}>
+        {/* 減光は端末本体だけに掛け、検索バーやボタンは常にくっきり見せる */}
+        <div ref={hostRef} className="pane-body h-full w-full px-2 pb-1 pt-1.5" />
+
+        <AnimatePresence>
+          {scrolledUp && (
+            <motion.button
+              key="to-bottom"
+              type="button"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.14 }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => {
+                entry?.terminal.scrollToBottom();
+                focusTerminal(pane.id);
+              }}
+              className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border-strong bg-bg-glass px-3 py-1 text-[11.5px] text-tx-secondary shadow-[var(--shadow-lg)] backdrop-blur-xl hover:border-accent hover:text-tx-primary"
+            >
+              <ArrowDown size={12} /> Jump to bottom
+            </motion.button>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {findOpen && <FindBar key="find" entry={entry} onClose={actions.closeFind} />}
+        </AnimatePresence>
+
+        {ended && (
+          <div
+            className="absolute bottom-3 right-3 z-20 flex items-center gap-2 rounded-lg border border-border-strong bg-bg-glass px-2.5 py-1.5 text-[12px] shadow-[var(--shadow-lg)] backdrop-blur-xl"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <span className={state.status === "error" ? "text-danger" : "text-tx-secondary"}>
+              {state.status === "error"
+                ? "Shell failed to start"
+                : `Process exited${state.exitCode != null ? ` (code ${state.exitCode})` : ""}`}
+            </span>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-md bg-accent px-2 py-0.5 font-medium text-accent-contrast hover:opacity-90"
+              onClick={() => restartTerminal(pane.id)}
+            >
+              <RotateCcw size={12} /> Restart
+            </button>
+            <button
+              type="button"
+              className="rounded-md px-2 py-0.5 text-tx-secondary hover:bg-tx-primary/[0.07]"
+              onClick={() => actions.closePane(pane.id)}
+            >
+              Close
+            </button>
+          </div>
         )}
       </div>
-
-      <div
-        ref={containerRef}
-        className="h-full w-full"
-        style={{ background: "transparent", padding: "6px 8px" }}
-      />
     </div>
   );
 }

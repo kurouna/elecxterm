@@ -1,85 +1,110 @@
-import { useAllPaneStatuses } from "../hooks/usePaneState";
+import { Bell, Copy, Keyboard, Maximize2 } from "lucide-react";
+import { PaneNode } from "../types";
+import { useAllPaneStates } from "../hooks/usePaneState";
+import { shortenPath } from "../services/paneInfo";
+import { KEYS } from "../keymap";
+import { ShellBadge, StatusDot } from "./ui";
 
 interface StatusBarProps {
-  activeTabNumber: number;
-  totalTabs: number;
-  /** 全タブのペイン総数 */
+  activePane: PaneNode | undefined;
+  zoomed: boolean;
   totalPanes: number;
-  /** 同時に開けるペインの上限 */
   maxPanes: number;
+  fontSize: number;
+  homeDir?: string;
+  onShowHelp: () => void;
+  onShowOverview: () => void;
+  onToggleZoom: () => void;
+  onCopyPath: (path: string) => void;
 }
 
 export function StatusBar({
-  activeTabNumber,
-  totalTabs,
+  activePane,
+  zoomed,
   totalPanes,
   maxPanes,
+  fontSize,
+  homeDir,
+  onShowHelp,
+  onShowOverview,
+  onToggleZoom,
+  onCopyPath,
 }: StatusBarProps) {
-  const paneStatuses = useAllPaneStatuses();
-  const runningCount = Object.values(paneStatuses).filter(
-    (s) => s === "running"
-  ).length;
+  const states = useAllPaneStates();
+  const values = Object.values(states);
+  const running = values.filter((s) => s.status === "running").length;
+  // 他のペインで起きた「見ておくべきこと」（未読出力・ベル）
+  const attention = values.filter((s) => s.activity || s.bell).length;
+  const bells = values.filter((s) => s.bell).length;
+  const state = activePane ? states[activePane.id] : undefined;
+  const cwd = state?.cwd ?? activePane?.cwd;
   // 上限が近いことを事前に知らせる（超えてから通知されるより親切）
-  const isNearLimit = totalPanes >= maxPanes - 2;
+  const nearLimit = totalPanes >= maxPanes - 2;
 
   return (
-    <div className="h-7 flex-shrink-0 bg-bg-main flex items-center justify-between px-4 text-[9px] text-tx-muted border-t border-border-dim select-none transition-colors duration-300">
-      {/* Left side */}
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-1.5 opacity-80">
-          {/* Running Indicator - Matched with Terminal ACTIVE color */}
-          <div className="h-1.5 w-1.5 rounded-full bg-[#22c55e] shadow-[0_0_5px_rgba(34,197,94,0.5)] animate-pulse" />
-          <span className="font-medium text-tx-secondary uppercase tracking-tight">
-            {runningCount} Running
-          </span>
+    <div className="flex h-[26px] shrink-0 select-none items-center gap-3 border-t border-border-dim bg-bg-chrome px-3 text-[11px] text-tx-muted">
+      {/* 左: アクティブペインの情報 */}
+      {activePane && (
+        <div className="flex min-w-0 items-center gap-2">
+          <StatusDot status={state?.status ?? "starting"} />
+          <ShellBadge shell={state?.shell ?? activePane.shell} />
+          {cwd && (
+            <button
+              type="button"
+              onClick={() => onCopyPath(cwd)}
+              title="Copy path"
+              className="group flex min-w-0 items-center gap-1.5 rounded px-1 font-mono text-[10.5px] text-tx-secondary hover:bg-tx-primary/[0.06]"
+            >
+              <span className="truncate">{shortenPath(cwd, homeDir)}</span>
+              <Copy size={10} className="shrink-0 opacity-0 group-hover:opacity-70" />
+            </button>
+          )}
         </div>
-        <span className="text-[8px] opacity-20 text-tx-muted">|</span>
-        <span className="opacity-80 uppercase tracking-tighter">
-          Tab: {activeTabNumber} / {totalTabs}
-        </span>
-        <span className="text-[8px] opacity-20 text-tx-muted">|</span>
-        <span
-          className={`uppercase tracking-tighter ${
-            isNearLimit ? "text-amber-400 opacity-100" : "opacity-80"
-          }`}
-          title={`Panes in use across all tabs (max ${maxPanes})`}
+      )}
+
+      {zoomed && (
+        <button
+          type="button"
+          onClick={onToggleZoom}
+          title={`Restore layout (${KEYS.zoom})`}
+          className="flex shrink-0 items-center gap-1 rounded bg-accent-dim px-1.5 py-px font-medium text-accent"
         >
-          Panes: {totalPanes} / {maxPanes}
+          <Maximize2 size={10} /> Zoomed
+        </button>
+      )}
+
+      <div className="ml-auto flex shrink-0 items-center gap-3">
+        {attention > 0 && (
+          <button
+            type="button"
+            onClick={onShowOverview}
+            title={`Panes with unseen output — open overview (${KEYS.overview})`}
+            className="flex items-center gap-1.5 rounded px-1 text-accent hover:bg-accent-dim"
+          >
+            {bells > 0 ? <Bell size={11} className="text-warning" /> : <span className="h-1.5 w-1.5 rounded-full bg-accent" />}
+            {attention} updated
+          </button>
+        )}
+        <span title="Running shells">{running} running</span>
+        <button
+          type="button"
+          onClick={onShowOverview}
+          title={`Panes across all tabs (max ${maxPanes}) — ${KEYS.overview}`}
+          className={`rounded px-1 tabular-nums hover:bg-tx-primary/[0.06] ${nearLimit ? "text-warning" : ""}`}
+        >
+          Panes {totalPanes}/{maxPanes}
+        </button>
+        <span className="tabular-nums" title={`Font size (${KEYS.fontUp} / ${KEYS.fontDown})`}>
+          {fontSize}px
         </span>
-      </div>
-
-      {/* Right side (Hints) */}
-      <div className="flex items-center gap-6 uppercase tracking-widest font-medium">
-        <div className="flex gap-4">
-          <span className="flex gap-2">
-            Tab <span className="text-tx-secondary font-mono">^⇧T/B/F</span>
-          </span>
-          <span className="flex gap-1.5 border-l border-border-dim pl-4">
-            CMD <span className="text-tx-secondary font-mono">^⇧D/E</span>
-          </span>
-          <span className="flex gap-1.5">
-            PS <span className="text-tx-secondary font-mono">^⎇D/E</span>
-          </span>
-        </div>
-
-        <div className="flex gap-4 border-l border-border-dim pl-4">
-          <span className="flex gap-2">
-            Pane <span className="text-tx-secondary font-mono">^⇧P/N</span>
-          </span>
-          <span className="flex gap-2">
-            Close <span className="text-tx-secondary font-mono">^⇧W</span>
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2 border-l border-border-dim pl-4">
-          <span>
-            Palette{" "}
-            <span className="text-tx-secondary px-1 font-mono">^⇧K</span>
-          </span>
-        </div>
-        
-        {/* Spacer for corner rounding */}
-        <div className="w-2 flex-shrink-0" />
+        <button
+          type="button"
+          onClick={onShowHelp}
+          title={`Keyboard shortcuts (${KEYS.help})`}
+          className="flex items-center gap-1 rounded px-1 hover:bg-tx-primary/[0.06] hover:text-tx-primary"
+        >
+          <Keyboard size={12} /> Shortcuts
+        </button>
       </div>
     </div>
   );

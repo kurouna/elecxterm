@@ -11,16 +11,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_window_state::Builder::default().build())
-        .setup(|_app| {
-            Ok(())
-        })
         .manage(pty_manager)
         .invoke_handler(tauri::generate_handler![
             commands::create_pty,
             commands::write_pty,
             commands::resize_pty,
             commands::destroy_pty,
-            commands::get_cwd,
+            commands::get_default_cwd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,45 +1,117 @@
 import { PaneStatus } from "../types";
 
 /**
- * ペインごとの揮発的な状態（実行ステータスなど）を管理するストア。
- * 巨大な tabs 状態の頻繁な更新と再描画を避けるために React の外で管理する。
+ * ペインごとの揮発的な状態（実行ステータス・タイトル・cwd・未読出力など）を
+ * 管理するストア。巨大な tabs 状態の頻繁な更新と再描画を避けるために React の外で管理する。
  *
  * React 側は `useSyncExternalStore` から参照するため、`getPaneState` /
- * `getAllStatuses` は「変化がなければ同一参照」を返す必要がある。
- * そのためスナップショットをキャッシュし、notify のタイミングでのみ作り直す。
+ * `getAllStates` は「変化がなければ同一参照」を返す必要がある。
+ * そのため状態オブジェクトは不変で扱い、全体スナップショットは notify 時にのみ作り直す。
  */
 export interface PaneVolatileState {
   status: PaneStatus;
+  /** OSC 0/2 で通知されたウィンドウタイトル */
+  title?: string;
+  /** シェル統合（OSC 9;9 / OSC 7）で追跡したカレントディレクトリ */
+  cwd?: string;
+  /** 実際に起動したシェル（pwsh が無い場合のフォールバックを反映） */
+  shell?: string;
+  exitCode?: number | null;
+  /** フォーカスされていない間に出力があった */
+  activity: boolean;
+  /** フォーカスされていない間にベルが鳴った */
+  bell: boolean;
 }
 
 type Listener = () => void;
 
-const DEFAULT_STATE: PaneVolatileState = Object.freeze({ status: "running" });
+const DEFAULT_STATE: PaneVolatileState = Object.freeze({
+  status: "starting",
+  activity: false,
+  bell: false,
+});
+
+/** 起動直後のプロンプト描画などを「未読の出力」と見なさない猶予 */
+const ACTIVITY_GRACE_MS = 1500;
+const EMPTY_MRU: readonly string[] = [];
 
 class PaneStateStore {
   private states = new Map<string, PaneVolatileState>();
+  private createdAt = new Map<string, number>();
+  private lastOutputAt = new Map<string, number>();
   private globalListeners = new Set<Listener>();
   private paneListeners = new Map<string, Set<Listener>>();
-  private allStatusesSnapshot: Record<string, PaneStatus> = {};
+  private allSnapshot: Record<string, PaneVolatileState> = {};
+  private focusedPaneId: string | null = null;
+  /** フォーカスされた順（先頭が最新）。Ctrl+Tab の切り替え順に使う */
+  private mru: readonly string[] = EMPTY_MRU;
 
   /** 特定のペインの状態を取得（未登録なら共有の既定値を返す = 参照安定） */
   getPaneState(id: string): PaneVolatileState {
     return this.states.get(id) ?? DEFAULT_STATE;
   }
 
-  /**
-   * 全てのステータスを取得（StatusBar 用）。変化がなければ同じ参照を返す。
-   * useSyncExternalStore に関数参照をそのまま渡せるようアロー関数で定義する。
-   */
-  getAllStatuses = (): Record<string, PaneStatus> => this.allStatusesSnapshot;
+  /** 全ペインの状態。変化がなければ同じ参照を返す */
+  getAllStates = (): Record<string, PaneVolatileState> => this.allSnapshot;
 
-  /** ステータスを更新 */
-  updateStatus(id: string, status: PaneStatus) {
-    const current = this.states.get(id);
-    if (current && current.status === status) return;
+  getMru = (): readonly string[] => this.mru;
 
-    this.states.set(id, { status });
+  getLastOutputAt(id: string): number | undefined {
+    return this.lastOutputAt.get(id);
+  }
+
+  /** ペインの生成を記録する（活動検知の猶予の起点） */
+  register(id: string) {
+    this.createdAt.set(id, Date.now());
+    this.update(id, { status: "starting", exitCode: undefined });
+  }
+
+  /** 状態を部分更新する。実際に値が変わったときだけ通知する */
+  update(id: string, patch: Partial<PaneVolatileState>) {
+    const current = this.getPaneState(id);
+    const changed = (Object.keys(patch) as (keyof PaneVolatileState)[]).some(
+      (key) => current[key] !== patch[key]
+    );
+    if (!changed && this.states.has(id)) return;
+    this.states.set(id, { ...current, ...patch });
     this.notify(id);
+  }
+
+  updateStatus(id: string, status: PaneStatus) {
+    this.update(id, { status });
+  }
+
+  /** PTY 出力を受け取ったことを記録する（高頻度で呼ばれるため通知は状態遷移時のみ） */
+  markOutput(id: string) {
+    const now = Date.now();
+    this.lastOutputAt.set(id, now);
+    if (id === this.focusedPaneId) return;
+    if (now - (this.createdAt.get(id) ?? 0) < ACTIVITY_GRACE_MS) return;
+    if (!this.getPaneState(id).activity) this.update(id, { activity: true });
+  }
+
+  markBell(id: string) {
+    if (id === this.focusedPaneId) return;
+    this.update(id, { bell: true });
+  }
+
+  /** フォーカス中のペインを設定する。未読フラグを消し、MRU の先頭に移す */
+  setFocusedPane(id: string | null) {
+    if (this.focusedPaneId === id) return;
+    this.focusedPaneId = id;
+    if (!id) return;
+    if (this.mru[0] !== id) {
+      this.mru = [id, ...this.mru.filter((p) => p !== id)];
+      this.globalListeners.forEach((l) => l());
+    }
+    const state = this.states.get(id);
+    if (state && (state.activity || state.bell)) {
+      this.update(id, { activity: false, bell: false });
+    }
+  }
+
+  getFocusedPane(): string | null {
+    return this.focusedPaneId;
   }
 
   /**
@@ -48,18 +120,16 @@ class PaneStateStore {
    * （まだマウントされているコンポーネントの購読を奪わないため）。
    */
   deletePane(id: string) {
+    this.createdAt.delete(id);
+    this.lastOutputAt.delete(id);
+    if (this.mru.includes(id)) this.mru = this.mru.filter((p) => p !== id);
     if (!this.states.delete(id)) return;
     this.notify(id);
   }
 
   private notify(id: string) {
     // スナップショットを作り直してから通知する（リスナーが最新値を読めるように）
-    const next: Record<string, PaneStatus> = {};
-    this.states.forEach((val, key) => {
-      next[key] = val.status;
-    });
-    this.allStatusesSnapshot = next;
-
+    this.allSnapshot = Object.fromEntries(this.states);
     this.globalListeners.forEach((l) => l());
     this.paneListeners.get(id)?.forEach((l) => l());
   }

@@ -1,10 +1,9 @@
-// ChildKiller は `Child` のスーパートレイト。`child.kill()` のメソッド解決に必要。
-use portable_pty::{Child, ChildKiller, CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
+// Child / ChildKiller はトレイトオブジェクト経由のメソッド解決（wait / clone_killer / kill）に必要
+use portable_pty::{Child, ChildKiller, CommandBuilder, MasterPty, NativePtySystem, PtyPair, PtySize, PtySystem};
 use serde::{Deserialize, Serialize};
-use std::io::Write;
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter};
 use dashmap::DashMap;
@@ -15,9 +14,25 @@ use parking_lot::Mutex;
 /// フロントの不具合やレース時に無制限にプロセスが生成されるのを防ぐ最後の砦。
 const MAX_INSTANCES: usize = 64;
 
-/// 子プロセスの終了をポーリングする間隔。`wait()` でブロックしてしまうと
-/// destroy 時に `kill()` のためのロックが取れなくなるため try_wait で回す。
-const CHILD_POLL_INTERVAL: Duration = Duration::from_millis(120);
+/// PTY 出力の読み取りバッファ。大量出力時に IPC 回数を減らすため大きめに取る。
+const READ_BUFFER_SIZE: usize = 16 * 1024;
+
+/// シェル統合（カレントディレクトリ通知）を無効化するための環境変数
+const NO_SHELL_INTEGRATION_ENV: &str = "ELECXTERM_NO_SHELL_INTEGRATION";
+
+/// PowerShell の prompt 関数をラップし、プロンプト表示のたびに OSC 9;9 で
+/// カレントディレクトリを通知するスクリプト。プロファイル（oh-my-posh 等）が
+/// 定義した prompt を壊さないよう、既存の関数を呼び出した結果の前に付け足すだけにする。
+const PWSH_INTEGRATION_SCRIPT: &str = r#"
+$global:__elecxtermPrompt = $function:prompt
+function global:prompt {
+  $out = & $global:__elecxtermPrompt
+  $loc = $executionContext.SessionState.Path.CurrentLocation
+  if ($loc.Provider.Name -eq 'FileSystem') {
+    "$([char]27)]9;9;$($loc.ProviderPath)$([char]27)\" + $out
+  } else { $out }
+}
+"#;
 
 #[derive(Error, Debug)]
 pub enum PtyError {
@@ -29,25 +44,16 @@ pub enum PtyError {
     Internal(String, String),
 }
 
-// Tauri コマンドの戻り値として使うために String へ変換しやすくする
-impl From<PtyError> for String {
-    fn from(err: PtyError) -> Self {
-        err.to_string()
-    }
-}
-
-/// PTYインスタンスごとの情報を保持する構造体
+/// PTYインスタンスごとの情報を保持する構造体。
+/// 子プロセス本体は終了監視スレッドが所有して `wait()` でブロックするため、
+/// ここでは kill 専用のハンドル（ChildKiller）だけを持つ。これによりポーリング不要で
+/// 終了を検知しつつ、破棄時はいつでも kill できる。
 struct PtyInstance {
-    // 書き込み用
     writer: Mutex<Box<dyn Write + Send>>,
-    // リサイズ制御用
     master: Mutex<Box<dyn MasterPty + Send>>,
-    // 子プロセス。destroy 時に明示的に kill するために保持する。
-    // 監視タスクは try_wait でポーリングするため、ロックは常に短時間で解放される。
-    child: Mutex<Box<dyn Child + Send>>,
-    // 原子的に読み書き可能なサイズ情報（ロック不要）
-    rows: AtomicU16,
-    cols: AtomicU16,
+    killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
+    /// 最後に適用したサイズ (rows, cols)
+    size: Mutex<(u16, u16)>,
 }
 
 /// PTYマネージャー: 複数のPTYインスタンスを非同期管理
@@ -72,6 +78,12 @@ pub struct PtyResizeOptions {
     pub cols: u16,
 }
 
+/// `pty-exit-{id}` イベントのペイロード
+#[derive(Serialize, Clone)]
+struct PtyExitPayload {
+    code: Option<u32>,
+}
+
 impl PtyManager {
     pub fn new() -> Self {
         PtyManager {
@@ -79,16 +91,18 @@ impl PtyManager {
         }
     }
 
-    /// 新しいPTYインスタンスを生成し、出力をフロントエンドに非同期でストリームする
+    /// 新しいPTYインスタンスを生成し、出力をフロントエンドにストリームする。
+    /// 戻り値は実際に起動したシェル（pwsh が無い場合のフォールバックを反映）。
     pub async fn create_pty(
         &self,
         app_handle: &AppHandle,
         options: PtyCreateOptions,
         on_data: Channel<InvokeResponseBody>,
     ) -> Result<String, PtyError> {
-        // 二重作成防止
+        // 同じ ID が残っているのはフロントがリロードされた場合だけ。古い PTY は
+        // もう誰も出力を受け取れないので、破棄して作り直す。
         if self.instances.contains_key(&options.id) {
-            return Ok(options.id);
+            self.destroy_pty(&options.id).await?;
         }
         if self.instances.len() >= MAX_INSTANCES {
             return Err(PtyError::TooManyInstances(MAX_INSTANCES));
@@ -96,186 +110,138 @@ impl PtyManager {
 
         let rows = options.rows.unwrap_or(24).max(1);
         let cols = options.cols.unwrap_or(80).max(1);
+        let requested_shell = options.shell.clone().unwrap_or_else(default_shell);
+        let cwd = options
+            .cwd
+            .clone()
+            .filter(|p| Path::new(p).is_dir())
+            .or_else(|| home_dir().map(|p| p.to_string_lossy().into_owned()));
 
-        // PTYの初期化
-        let options_clone = options.clone();
-        let (pair, child) = tokio::task::spawn_blocking(move || {
+        type Spawned = (PtyPair, Box<dyn Child + Send>, String);
+        let (pair, child, shell) = tokio::task::spawn_blocking(move || -> Result<Spawned, String> {
             let pty_system = NativePtySystem::default();
-
             let pair = pty_system
-                .openpty(PtySize {
-                    rows,
-                    cols,
-                    pixel_width: 0,
-                    pixel_height: 0,
-                }).map_err(|e| e.to_string())?;
+                .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+                .map_err(|e| e.to_string())?;
 
-            let shell = options_clone.shell.unwrap_or_else(default_shell);
-
-            let mut cmd = CommandBuilder::new(&shell);
-            // 存在しないディレクトリを渡すと spawn 自体が失敗するため、
-            // 実在するものだけを cwd として採用しフォールバックする。
-            if let Some(cwd) = options_clone.cwd.filter(|p| std::path::Path::new(p).is_dir()) {
-                cmd.cwd(cwd);
+            // pwsh (PowerShell 7) が未インストールの環境では Windows PowerShell に落とす
+            let mut candidates = vec![requested_shell.clone()];
+            if is_shell(&requested_shell, "pwsh") {
+                candidates.push("powershell.exe".to_string());
             }
 
-            let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
-            Ok::<(portable_pty::PtyPair, Box<dyn portable_pty::Child + Send>), String>((pair, child))
+            let mut last_err = String::new();
+            for shell in candidates {
+                match pair.slave.spawn_command(build_command(&shell, cwd.as_deref())) {
+                    Ok(child) => return Ok((pair, child as Box<dyn Child + Send>, shell)),
+                    Err(e) => last_err = format!("{shell}: {e}"),
+                }
+            }
+            Err(last_err)
         })
         .await
         .map_err(|e| PtyError::Internal("spawn_blocking".into(), e.to_string()))?
-        .map_err(|e| PtyError::Internal("open pty".into(), e))?;
+        .map_err(|e| PtyError::Internal("start shell".into(), e))?;
 
+        // 子プロセス起動後はスレーブ側を保持する必要がない（保持すると Unix では EOF が届かない）
+        drop(pair.slave);
         let master = pair.master;
-        let reader = master
+        let mut reader = master
             .try_clone_reader()
             .map_err(|e| PtyError::Internal("clone reader".into(), e.to_string()))?;
         let writer = master
             .take_writer()
             .map_err(|e| PtyError::Internal("take writer".into(), e.to_string()))?;
+        let killer = child.clone_killer();
 
         let pty_id = options.id.clone();
-
         let instance = Arc::new(PtyInstance {
             writer: Mutex::new(writer),
             master: Mutex::new(master),
-            child: Mutex::new(child),
-            rows: AtomicU16::new(rows),
-            cols: AtomicU16::new(cols),
+            killer: Mutex::new(killer),
+            size: Mutex::new((rows, cols)),
         });
-
-        let exit_sent = Arc::new(AtomicBool::new(false));
-        let exit_sent_read = Arc::clone(&exit_sent);
-        let exit_sent_wait = Arc::clone(&exit_sent);
-
-        // 出力読み取りタスク
-        let pty_id_for_read = pty_id.clone();
-        let app_handle_for_read = app_handle.clone();
-        tokio::spawn(async move {
-            let mut reader = reader;
-            loop {
-                // 読み取りを blocking スレッドで実行
-                let joined = tokio::task::spawn_blocking(move || {
-                    use std::io::Read;
-                    let mut buf = [0u8; 8192];
-                    let res = reader.read(&mut buf);
-                    (res, buf, reader)
-                })
-                .await;
-
-                // ランタイム停止などで join に失敗した場合は静かに読み取りを終える。
-                // ここで panic するとアプリ全体を巻き込むため expect は使わない。
-                let Ok((res, buf, next_reader)) = joined else { break };
-                reader = next_reader;
-
-                match res {
-                    Ok(0) => break, // EOF
-                    Ok(n) => {
-                        // 生バイトを Channel で転送する。Tauri v2 の Raw 経路は
-                        // JSON 配列化を避けるため、高スループット出力でも軽量。
-                        if on_data
-                            .send(InvokeResponseBody::Raw(buf[..n].to_vec()))
-                            .is_err()
-                        {
-                            // 受信側（フロントのペイン）が消滅している。読み続ける意味がない。
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-            if !exit_sent_read.swap(true, Ordering::SeqCst) {
-                let _ = app_handle_for_read.emit(&format!("pty-exit-{}", pty_id_for_read), ());
-            }
-        });
-
-        // 子プロセス終了監視タスク。
-        // `wait()` で待つと Mutex を掴みっぱなしになり destroy_pty の kill が
-        // ブロックされるため、短周期の try_wait でポーリングする。
-        let app_handle_for_child = app_handle.clone();
-        let pty_id_for_child = pty_id.clone();
-        let instance_for_child = Arc::clone(&instance);
-        tokio::spawn(async move {
-            loop {
-                let inst = Arc::clone(&instance_for_child);
-                let finished = tokio::task::spawn_blocking(move || {
-                    // Ok(Some) = 終了（ここで reap 済み）、Err = 監視続行不能
-                    !matches!(inst.child.lock().try_wait(), Ok(None))
-                })
-                .await
-                .unwrap_or(true);
-
-                if finished {
-                    break;
-                }
-                tokio::time::sleep(CHILD_POLL_INTERVAL).await;
-            }
-
-            if !exit_sent_wait.swap(true, Ordering::SeqCst) {
-                let _ = app_handle_for_child.emit(&format!("pty-exit-{}", pty_id_for_child), ());
-            }
-        });
-
         self.instances.insert(pty_id.clone(), instance);
 
-        Ok(pty_id)
+        // 出力読み取りスレッド。ブロッキング read を専用スレッドで回すことで、
+        // チャンクごとに tokio の blocking プールへタスクを投げるコストを避ける。
+        // master が drop される（destroy）と EOF / エラーで抜ける。
+        let spawn_reader = std::thread::Builder::new()
+            .name(format!("pty-read-{pty_id}"))
+            .spawn(move || {
+                let mut buf = vec![0u8; READ_BUFFER_SIZE];
+                loop {
+                    match reader.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            // 生バイトを Channel で転送する（JSON 配列化を避ける高速経路）。
+                            // 受信側（フロントのペイン）が消えていれば読み続ける意味はない。
+                            if on_data.send(InvokeResponseBody::Raw(buf[..n].to_vec())).is_err() {
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+
+        // 子プロセス終了監視スレッド。子プロセスを所有して wait() でブロックする
+        // （kill は ChildKiller 経由で行えるのでロック競合は起きない）。
+        let app_for_wait = app_handle.clone();
+        let id_for_wait = pty_id.clone();
+        let mut child = child;
+        let spawn_waiter = std::thread::Builder::new()
+            .name(format!("pty-wait-{pty_id}"))
+            .spawn(move || {
+                let code = child.wait().ok().map(|status| status.exit_code());
+                let _ = app_for_wait.emit(&format!("pty-exit-{id_for_wait}"), PtyExitPayload { code });
+            });
+
+        if let Err(e) = spawn_reader.and(spawn_waiter) {
+            let _ = self.destroy_pty(&pty_id).await;
+            return Err(PtyError::Internal("spawn thread".into(), e.to_string()));
+        }
+
+        Ok(shell)
     }
 
     pub async fn write_to_pty(&self, id: &str, data: Vec<u8>) -> Result<(), PtyError> {
         let instance = self.get_instance(id)?;
 
-        tokio::task::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || -> Result<(), String> {
             let mut writer = instance.writer.lock();
             writer.write_all(&data).map_err(|e| e.to_string())?;
-            writer.flush().map_err(|e| e.to_string())?;
-            Ok::<(), String>(())
-        }).await.map_err(|e| PtyError::Internal("spawn_blocking".into(), e.to_string()))?
-          .map_err(|e| PtyError::Internal("write data".into(), e))?;
-
-        Ok(())
+            writer.flush().map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| PtyError::Internal("spawn_blocking".into(), e.to_string()))?
+        .map_err(|e| PtyError::Internal("write data".into(), e))
     }
 
     pub async fn resize_pty(&self, id: &str, rows: u16, cols: u16) -> Result<(), PtyError> {
         // 0 を渡すと一部の端末アプリが異常動作するため下限を 1 にする
         let rows = rows.max(1);
         let cols = cols.max(1);
-
         let instance = self.get_instance(id)?;
 
-        let current_rows = instance.rows.load(Ordering::SeqCst);
-        let current_cols = instance.cols.load(Ordering::SeqCst);
-
-        let instance_cloned = Arc::clone(&instance);
-        tokio::task::spawn_blocking(move || {
-            let master = instance_cloned.master.lock();
-            // サイズが変わっていない場合、ConPTY / SIGWINCH が発火せず
-            // TUI アプリが再描画しないことがある。一度ずらしてから戻すことで
-            // 明示的に通知する（既存挙動の維持）。
-            if current_rows == rows && current_cols == cols {
-                master.resize(PtySize {
-                    rows: rows.saturating_add(1),
-                    cols,
-                    pixel_width: 0,
-                    pixel_height: 0,
-                }).map_err(|e| e.to_string())?;
+        tokio::task::spawn_blocking(move || -> Result<(), String> {
+            let master = instance.master.lock();
+            let mut size = instance.size.lock();
+            // サイズが変わっていない場合、ConPTY が通知を発火せず TUI アプリが
+            // 再描画しないことがある。一度ずらしてから戻すことで明示的に通知する。
+            if *size == (rows, cols) {
+                master
+                    .resize(PtySize { rows: rows.saturating_add(1), cols, pixel_width: 0, pixel_height: 0 })
+                    .map_err(|e| e.to_string())?;
             }
-
-            master.resize(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            }).map_err(|e| e.to_string())?;
-
-            Ok::<(), String>(())
-        }).await.map_err(|e| PtyError::Internal("spawn_blocking".into(), e.to_string()))?
-          .map_err(|e| PtyError::Internal("resize".into(), e))?;
-
-        // instance is still available here
-        instance.rows.store(rows, Ordering::SeqCst);
-        instance.cols.store(cols, Ordering::SeqCst);
-
-        Ok(())
+            master
+                .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+                .map_err(|e| e.to_string())?;
+            *size = (rows, cols);
+            Ok(())
+        })
+        .await
+        .map_err(|e| PtyError::Internal("spawn_blocking".into(), e.to_string()))?
+        .map_err(|e| PtyError::Internal("resize".into(), e))
     }
 
     /// PTY を破棄する。子プロセスを明示的に kill するため、実行中のコマンドが
@@ -286,25 +252,87 @@ impl PtyManager {
             return Ok(());
         };
 
+        // ClosePseudoConsole（master の drop）は出力が掃けるまでブロックしうるため、
+        // kill と drop は blocking スレッドで行う。
         tokio::task::spawn_blocking(move || {
-            let mut child = instance.child.lock();
             // 既に終了していれば kill は失敗するが、その場合は何もする必要がない
-            let _ = child.kill();
-            let _ = child.try_wait();
+            let _ = instance.killer.lock().kill();
+            drop(instance);
         })
         .await
-        .map_err(|e| PtyError::Internal("spawn_blocking".into(), e.to_string()))?;
-
-        Ok(())
+        .map_err(|e| PtyError::Internal("spawn_blocking".into(), e.to_string()))
     }
 
     fn get_instance(&self, id: &str) -> Result<Arc<PtyInstance>, PtyError> {
-        let map_ref = self
-            .instances
+        self.instances
             .get(id)
-            .ok_or_else(|| PtyError::NotFound(id.to_string()))?;
-        Ok(Arc::clone(map_ref.value()))
+            .map(|entry| Arc::clone(entry.value()))
+            .ok_or_else(|| PtyError::NotFound(id.to_string()))
     }
+}
+
+/// シェルの実行ファイル名が `name`（拡張子なし）と一致するか
+fn is_shell(shell: &str, name: &str) -> bool {
+    Path::new(shell)
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().eq_ignore_ascii_case(name))
+        .unwrap_or(false)
+}
+
+/// シェルごとの起動コマンドを組み立てる。cmd / PowerShell には、
+/// プロンプトのたびにカレントディレクトリを OSC 9;9 で通知させる
+/// 「シェル統合」を仕込む（Windows Terminal と同じ方式）。
+fn build_command(shell: &str, cwd: Option<&str>) -> CommandBuilder {
+    let mut cmd = CommandBuilder::new(shell);
+    if let Some(cwd) = cwd {
+        cmd.cwd(cwd);
+    }
+    cmd.env("TERM_PROGRAM", "elecxterm");
+    cmd.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
+    cmd.env("COLORTERM", "truecolor");
+
+    if std::env::var_os(NO_SHELL_INTEGRATION_ENV).is_some() {
+        return cmd;
+    }
+
+    if is_shell(shell, "cmd") {
+        let prompt = std::env::var("PROMPT").unwrap_or_else(|_| "$P$G".to_string());
+        if !prompt.contains("]9;9;") {
+            cmd.env("PROMPT", format!("$e]9;9;$P$e\\{prompt}"));
+        }
+    } else if is_shell(shell, "pwsh") || is_shell(shell, "powershell") {
+        // -EncodedCommand は UTF-16LE の Base64。引用符のエスケープ問題を避けられる
+        let utf16: Vec<u8> = PWSH_INTEGRATION_SCRIPT
+            .encode_utf16()
+            .flat_map(|unit| unit.to_le_bytes())
+            .collect();
+        let encoded = base64_encode(&utf16);
+        cmd.args(["-NoLogo", "-NoExit", "-EncodedCommand", encoded.as_str()]);
+    }
+    cmd
+}
+
+fn base64_encode(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n = (u32::from(chunk[0]) << 16)
+            | (u32::from(*chunk.get(1).unwrap_or(&0)) << 8)
+            | u32::from(*chunk.get(2).unwrap_or(&0));
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(TABLE[((n >> (18 - 6 * i)) & 0x3f) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+pub fn home_dir() -> Option<PathBuf> {
+    let var = if cfg!(target_os = "windows") { "USERPROFILE" } else { "HOME" };
+    std::env::var_os(var).map(PathBuf::from).filter(|p| p.is_dir())
 }
 
 fn default_shell() -> String {
@@ -319,4 +347,26 @@ pub type SharedPtyManager = Arc<PtyManager>;
 
 pub fn create_shared_pty_manager() -> SharedPtyManager {
     Arc::new(PtyManager::new())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn base64_matches_reference() {
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+    }
+
+    #[test]
+    fn shell_name_matching() {
+        assert!(is_shell("pwsh.exe", "pwsh"));
+        assert!(is_shell("C:\\Windows\\System32\\cmd.exe", "cmd"));
+        assert!(is_shell("PowerShell.EXE", "powershell"));
+        assert!(!is_shell("pwsh-preview.exe", "pwsh"));
+    }
 }

@@ -1,9 +1,8 @@
-use crate::pty_manager::{PtyCreateOptions, PtyResizeOptions, SharedPtyManager};
+use crate::pty_manager::{home_dir, PtyCreateOptions, PtyResizeOptions, SharedPtyManager};
 use tauri::{AppHandle, State};
 use tauri::ipc::{Channel, InvokeResponseBody};
 
-
-/// PTYインスタンスを新規作成するコマンド（非同期）
+/// PTYインスタンスを新規作成するコマンド。実際に起動したシェル名を返す。
 /// on_data: PTY 出力を生バイトでフロントへ流す Channel（JSON 化を避ける高速経路）
 #[tauri::command]
 pub async fn create_pty(
@@ -15,7 +14,7 @@ pub async fn create_pty(
     state.create_pty(&app_handle, options, on_data).await.map_err(|e| e.to_string())
 }
 
-/// PTYに入力データを書き込むコマンド（非同期）
+/// PTYに入力データを書き込むコマンド
 #[tauri::command]
 pub async fn write_pty(
     state: State<'_, SharedPtyManager>,
@@ -25,7 +24,7 @@ pub async fn write_pty(
     state.write_to_pty(&id, data).await.map_err(|e| e.to_string())
 }
 
-/// PTYのサイズを変更するコマンド（非同期）
+/// PTYのサイズを変更するコマンド
 #[tauri::command]
 pub async fn resize_pty(
     state: State<'_, SharedPtyManager>,
@@ -34,15 +33,17 @@ pub async fn resize_pty(
     state.resize_pty(&options.id, options.rows, options.cols).await.map_err(|e| e.to_string())
 }
 
+/// 開始ディレクトリ未指定時の既定値（ホームディレクトリ）。
+/// アプリ自体のカレントディレクトリはインストール先や System32 になりうるため使わない。
 #[tauri::command]
-pub async fn get_cwd() -> Result<String, String> {
-    std::env::current_dir()
+pub async fn get_default_cwd() -> Result<String, String> {
+    home_dir()
+        .or_else(|| std::env::current_dir().ok())
         .map(|p| p.to_string_lossy().into_owned())
-        .map_err(|e| format!("Failed to get current directory: {}", e))
+        .ok_or_else(|| "Failed to resolve default directory".to_string())
 }
 
-
-/// PTYインスタンスを破棄するコマンド（非同期）
+/// PTYインスタンスを破棄するコマンド
 #[tauri::command]
 pub async fn destroy_pty(
     state: State<'_, SharedPtyManager>,

@@ -1,70 +1,112 @@
 @import "tailwindcss";
 
-/* 
-  elecxterm Robust Theme System
-  All colors are defined as CSS variables and mapped to Tailwind.
+/*
+  elecxterm theme system
+  すべての色は CSS 変数で定義し Tailwind のトークンへ割り当てる。
+  端末（xterm）の背景・前景・カーソル・選択色も src/theme.ts がこの変数から読むため、
+  UI と端末の色はここを変えるだけで揃う（ANSI 16 色のみ theme.ts で定義）。
 */
 
 @theme {
   --color-bg-main: var(--bg-main);
+  --color-bg-chrome: var(--bg-chrome);
   --color-bg-surface: var(--bg-surface);
   --color-bg-elevated: var(--bg-elevated);
   --color-bg-glass: var(--bg-glass);
+  --color-scrim: var(--scrim);
 
   --color-border-dim: var(--border-dim);
-  --color-border-bright: var(--border-bright);
-  --color-border-error: var(--border-error);
+  --color-border-strong: var(--border-strong);
+  --color-border-error: var(--danger);
 
   --color-accent: var(--accent);
   --color-accent-dim: var(--accent-dim);
+  --color-accent-contrast: var(--accent-contrast);
 
-  --color-status-green: #22c55e;
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
 
   --color-tx-primary: var(--tx-primary);
   --color-tx-secondary: var(--tx-secondary);
   --color-tx-muted: var(--tx-muted);
 
-  --font-mono: "JetBrains Mono", monospace;
-  --font-sans: "Noto Sans JP", "Inter", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", "Yu Gothic UI", "Meiryo UI", system-ui, sans-serif;
 }
 
-/* Default & Midnight (Dark) */
+/* Midnight (Dark) — 既定 */
 :root,
-html[data-theme='dark'] {
-  --bg-main: #05070a;
-  --bg-surface: #0f172a;
-  --bg-elevated: #161b22;
-  --bg-glass: rgba(10, 14, 23, 0.85);
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-main: #0b0e14;
+  --bg-chrome: #07090e;
+  --bg-surface: #121620;
+  --bg-elevated: #1a1f2b;
+  --bg-glass: rgba(16, 20, 29, 0.86);
+  --scrim: rgba(3, 5, 9, 0.55);
 
-  --border-dim: #1e293b;
-  --border-bright: #818cf8;
-  --border-error: #f87171;
+  --border-dim: #1d2330;
+  --border-strong: #2b3242;
 
-  --accent: #818cf8;
-  --accent-dim: rgba(129, 140, 248, 0.15);
+  --accent: #8b9cff;
+  --accent-dim: rgba(139, 156, 255, 0.16);
+  --accent-contrast: #0b0e14;
 
-  --tx-primary: #f8fafc;
-  --tx-secondary: #e2e8f0;
-  --tx-muted: #94a3b8;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --info: #60a5fa;
+
+  --tx-primary: #e8ebf2;
+  --tx-secondary: #b6bfce;
+  --tx-muted: #7c869a;
+
+  --term-fg: #dfe4ee;
+  --term-selection: rgba(139, 156, 255, 0.32);
+  --term-selection-inactive: rgba(139, 156, 255, 0.16);
+  --term-scrollbar: rgba(124, 134, 154, 0.28);
+  --term-scrollbar-hover: rgba(139, 156, 255, 0.55);
+  --term-scrollbar-active: rgba(139, 156, 255, 0.8);
+
+  --shadow-lg: 0 24px 64px -12px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.02);
 }
 
 /* Daylight (Light) */
-html[data-theme='light'] {
+html[data-theme="light"] {
+  color-scheme: light;
   --bg-main: #ffffff;
-  --bg-surface: #f8fafc;
-  --bg-elevated: #f4f6f9;
-  --bg-glass: rgba(255, 255, 255, 0.98);
+  --bg-chrome: #eef0f4;
+  --bg-surface: #f6f7f9;
+  --bg-elevated: #e8ebf0;
+  --bg-glass: rgba(255, 255, 255, 0.92);
+  --scrim: rgba(15, 23, 42, 0.22);
 
-  --border-dim: #cbd5e1;
-  --border-bright: #2563eb;
-  --border-error: #dc2626;
+  --border-dim: #e1e5ec;
+  --border-strong: #cdd3dd;
 
-  --accent: #2563eb;
-  --accent-dim: rgba(37, 99, 235, 0.1);
+  --accent: #3b5bdb;
+  --accent-dim: rgba(59, 91, 219, 0.12);
+  --accent-contrast: #ffffff;
 
-  --tx-primary: #0f172a;
-  --tx-secondary: #1e293b;
-  --tx-muted: #334155;
+  --success: #16a34a;
+  --warning: #b45309;
+  --danger: #dc2626;
+  --info: #2563eb;
+
+  --tx-primary: #111827;
+  --tx-secondary: #374151;
+  --tx-muted: #6b7280;
+
+  --term-fg: #1f2937;
+  --term-selection: rgba(59, 91, 219, 0.2);
+  --term-selection-inactive: rgba(59, 91, 219, 0.1);
+  --term-scrollbar: rgba(75, 85, 99, 0.25);
+  --term-scrollbar-hover: rgba(59, 91, 219, 0.5);
+  --term-scrollbar-active: rgba(59, 91, 219, 0.75);
+
+  --shadow-lg: 0 24px 64px -16px rgba(15, 23, 42, 0.28), 0 0 0 1px rgba(15, 23, 42, 0.04);
 }
 
 /* Base Reset & Core Styles
@@ -77,6 +119,10 @@ html[data-theme='light'] {
     padding: 0;
     box-sizing: border-box;
   }
+
+  button {
+    cursor: default;
+  }
 }
 
 body {
@@ -86,17 +132,68 @@ body {
   background-color: var(--bg-main);
   color: var(--tx-primary);
   font-family: var(--font-sans);
+  font-size: 13px;
 
   /* Windowsでの文字描画最適化 */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   font-synthesis: none;
+  user-select: none;
 }
 
-/* High-quality rendering for terminal area */
-.terminal-container {
-  image-rendering: auto;
+input,
+textarea {
+  user-select: text;
+}
+
+/* アニメーションを減らす設定を尊重する */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* キーキャップ */
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  background: var(--bg-surface);
+  color: var(--tx-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* xterm を open() するホスト要素 */
+.terminal-root {
+  height: 100%;
+  width: 100%;
+}
+
+/* 非アクティブなペインを少し沈めて、フォーカス位置を一目で分かるようにする */
+.pane-body {
+  transition: opacity 160ms ease;
+}
+.pane[data-dim="subtle"] .pane-body {
+  opacity: 0.7;
+}
+.pane[data-dim="strong"] .pane-body {
+  opacity: 0.45;
+}
+.pane[data-dim]:hover .pane-body {
+  opacity: 0.85;
 }
 
 /* Force xterm.js internal elements to respect font settings */
@@ -149,7 +246,7 @@ body {
 /* xterm v6 はネイティブ (::-webkit-scrollbar) ではなく、VS Code 由来の
    オーバーレイスクロールバー (.xterm-scrollable-element > .scrollbar/.slider) を描画する。
    幅/高さは JS がインライン style (既定 10px) で指定するため、!important で上書きする。
-   スライダーの色は TerminalPane の theme.scrollbarSlider* で制御。 */
+   スライダーの色は theme.ts の scrollbarSlider* (= --term-scrollbar*) で制御。 */
 .xterm-scrollable-element > .scrollbar.vertical,
 .xterm-scrollable-element > .scrollbar.vertical > .slider {
   width: 7px !important;
@@ -162,10 +259,30 @@ body {
   border-radius: 9999px !important;
 }
 
+/* 概要表示のプレビュー: 上端をフェードさせて「続きがある」ことを示す */
+.preview-fade {
+  mask-image: linear-gradient(to bottom, transparent 0, black 28%);
+}
+
 .titlebar-drag {
   -webkit-app-region: drag;
 }
 
 .titlebar-no-drag {
   -webkit-app-region: no-drag;
+}
+
+/* テーマ切り替えの円形リビール（themeTransition.ts）。既定のクロスフェードは使わない */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* ウィンドウが非アクティブの間はタイトルバーを沈める（ネイティブアプリと同じ作法） */
+.titlebar .titlebar-dimmable {
+  transition: opacity 160ms ease;
+}
+.titlebar[data-window-inactive] .titlebar-dimmable {
+  opacity: 0.5;
 }

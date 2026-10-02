@@ -19,6 +19,11 @@ export default defineConfig(async () => ({
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
 
+  // デスクトップアプリとして同梱するだけなので、Web 向けのチャンクサイズ警告は緩める
+  build: {
+    chunkSizeWarningLimit: 1500,
+  },
+
   clearScreen: false,
   server: {
     port: 1420,

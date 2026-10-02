@@ -1,6 +1,5 @@
 import { useCallback, useSyncExternalStore } from "react";
 import { paneStateStore, PaneVolatileState } from "../services/PaneStateStore";
-import { PaneStatus } from "../types";
 
 /**
  * 特定のペインの揮発的な状態を購読するフック。
@@ -17,13 +16,20 @@ export function usePaneState(id: string): PaneVolatileState {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
-/**
- * 全てのペインのステータスを購読するフック（StatusBar 用）
- */
-export function useAllPaneStatuses(): Record<string, PaneStatus> {
+/** 全ペインの状態を購読するフック（タブバー・ステータスバー・概要表示用） */
+export function useAllPaneStates(): Record<string, PaneVolatileState> {
   return useSyncExternalStore(
     paneStateStore.subscribeGlobal,
-    paneStateStore.getAllStatuses,
-    paneStateStore.getAllStatuses
+    paneStateStore.getAllStates,
+    paneStateStore.getAllStates
+  );
+}
+
+/** フォーカス履歴（先頭が最新） */
+export function usePaneMru(): readonly string[] {
+  return useSyncExternalStore(
+    paneStateStore.subscribeGlobal,
+    paneStateStore.getMru,
+    paneStateStore.getMru
   );
 }
