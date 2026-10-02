@@ -22,6 +22,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
   cursorBlink: true,
   dimInactive: "subtle",
   lineHeight: 1.3,
+  colorScheme: "elecxterm",
+  windowMaterial: "solid",
+  notifyAfterSeconds: 10,
 };
 
 /** 保存されていた設定を検証し、壊れた項目は既定値に戻す */
@@ -34,6 +37,13 @@ function sanitizePreferences(raw: unknown): Preferences {
     dimInactive: r.dimInactive === "off" || r.dimInactive === "strong" || r.dimInactive === "subtle" ? r.dimInactive : d.dimInactive,
     lineHeight:
       typeof r.lineHeight === "number" && r.lineHeight >= 1 && r.lineHeight <= 2 ? r.lineHeight : d.lineHeight,
+    colorScheme: typeof r.colorScheme === "string" && r.colorScheme ? r.colorScheme : d.colorScheme,
+    windowMaterial:
+      r.windowMaterial === "mica" || r.windowMaterial === "tabbed" || r.windowMaterial === "solid" ? r.windowMaterial : d.windowMaterial,
+    notifyAfterSeconds:
+      typeof r.notifyAfterSeconds === "number" && r.notifyAfterSeconds >= 0 && r.notifyAfterSeconds <= 3600
+        ? r.notifyAfterSeconds
+        : d.notifyAfterSeconds,
   };
 }
 

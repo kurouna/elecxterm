@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { FolderOpen, Minus, Monitor, Moon, Plus, RotateCcw, Settings, Sun, X } from "lucide-react";
-import { CursorStyle, DimLevel, Preferences } from "../types";
+import { CursorStyle, DimLevel, Preferences, WindowMaterial } from "../types";
+import { ResolvedTheme, schemePreview, TERMINAL_SCHEMES } from "../theme";
 import { Theme } from "../ThemeContext";
 import { DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE, DEFAULT_PREFERENCES, FONT_SIZE_MAX, FONT_SIZE_MIN } from "../hooks/useLayout";
 import { KEYS } from "../keymap";
@@ -24,6 +25,9 @@ interface SettingsPanelProps {
   onStartDirectoryChange: (dir: string) => void;
   /** アクティブペインの現在のディレクトリ（「ここを使う」ボタン用） */
   currentDirectory?: string;
+  resolvedTheme: ResolvedTheme;
+  /** Mica が使える環境（Windows 11）か */
+  micaSupported: boolean;
 }
 
 /** 日本語グリフなどを補うために、どのプリセットにも後ろに付けるフォールバック */
@@ -101,6 +105,8 @@ function SettingsBody({
   startDirectory,
   onStartDirectoryChange,
   currentDirectory,
+  resolvedTheme,
+  micaSupported,
 }: SettingsPanelProps) {
   const installed = useMemo(() => new Map(FONT_PRESETS.map((f) => [f, isFontInstalled(f)])), []);
   const [customFont, setCustomFont] = useState(fontFamily);
@@ -179,7 +185,49 @@ function SettingsBody({
             onChange={(v) => onPreferencesChange({ lineHeight: Number(v) })}
           />
         </Row>
-        <FontPreview fontFamily={fontFamily} fontSize={fontSize} lineHeight={preferences.lineHeight} cursorStyle={preferences.cursorStyle} />
+        <FontPreview
+          fontFamily={fontFamily}
+          fontSize={fontSize}
+          lineHeight={preferences.lineHeight}
+          cursorStyle={preferences.cursorStyle}
+          scheme={schemePreview(preferences.colorScheme, resolvedTheme)}
+        />
+      </Section>
+
+      <Section title="Terminal colors">
+        <div className="grid grid-cols-3 gap-2">
+          {TERMINAL_SCHEMES.map((scheme) => {
+            const preview = schemePreview(scheme.id, resolvedTheme);
+            const active = preferences.colorScheme === scheme.id;
+            const adaptive = scheme.id === "elecxterm" || (scheme.dark && scheme.light);
+            return (
+              <button
+                key={scheme.id}
+                type="button"
+                onClick={() => onPreferencesChange({ colorScheme: scheme.id })}
+                aria-pressed={active}
+                className={`overflow-hidden rounded-lg border text-left transition-shadow ${
+                  active ? "border-accent shadow-[0_0_0_3px_var(--accent-dim)]" : "border-border-strong hover:border-tx-muted"
+                }`}
+              >
+                <div className="px-2.5 py-2 font-mono text-[11px]" style={{ background: preview.background, color: preview.foreground }}>
+                  <div className="truncate">
+                    <span style={{ color: preview.colors[1] }}>~</span> <span style={{ color: preview.colors[3] }}>git</span> log
+                  </div>
+                  <div className="mt-1.5 flex gap-1">
+                    {preview.colors.map((color, i) => (
+                      <span key={i} className="h-2 w-2 rounded-full" style={{ background: color }} />
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between border-t border-border-dim px-2.5 py-1 text-[11.5px] text-tx-secondary">
+                  <span className="truncate">{scheme.name.replace(" (follows UI)", "")}</span>
+                  {adaptive && <span className="text-[10px] text-tx-muted" title="Switches with the light / dark theme">◐</span>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </Section>
 
       <Section title="Cursor">
@@ -212,6 +260,43 @@ function SettingsBody({
               { value: "strong", label: "Strong" },
             ]}
             onChange={(dimInactive) => onPreferencesChange({ dimInactive })}
+          />
+        </Row>
+      </Section>
+
+      <Section title="Window">
+        <Row
+          label="Background material"
+          hint={micaSupported ? "Mica lets your wallpaper tint the title bar and gaps" : "Mica requires Windows 11"}
+        >
+          <Segmented<WindowMaterial>
+            value={micaSupported ? preferences.windowMaterial : "solid"}
+            options={
+              micaSupported
+                ? [
+                    { value: "solid", label: "Solid" },
+                    { value: "mica", label: "Mica" },
+                    { value: "tabbed", label: "Mica Alt" },
+                  ]
+                : [{ value: "solid", label: "Solid" }]
+            }
+            onChange={(windowMaterial) => onPreferencesChange({ windowMaterial })}
+          />
+        </Row>
+      </Section>
+
+      <Section title="Notifications">
+        <Row label="Long-running commands" hint="Notify when a command finishes in a pane you are not looking at">
+          <Segmented
+            value={String(preferences.notifyAfterSeconds)}
+            options={[
+              { value: "0", label: "Off" },
+              { value: "5", label: "5s" },
+              { value: "10", label: "10s" },
+              { value: "30", label: "30s" },
+              { value: "60", label: "1m" },
+            ]}
+            onChange={(v) => onPreferencesChange({ notifyAfterSeconds: Number(v) })}
           />
         </Row>
       </Section>
@@ -385,25 +470,29 @@ function FontPreview({
   fontSize,
   lineHeight,
   cursorStyle,
+  scheme,
 }: {
   fontFamily: string;
   fontSize: number;
   lineHeight: number;
   cursorStyle: CursorStyle;
+  scheme: { background: string; foreground: string; colors: string[] };
 }) {
   const cursor =
     cursorStyle === "block" ? "bg-accent/80 w-[0.6em]" : cursorStyle === "underline" ? "w-[0.6em] border-b-2 border-accent" : "w-[2px] bg-accent";
   return (
     <div
-      className="overflow-hidden rounded-lg border border-border-strong bg-bg-main px-3 py-2 text-[var(--term-fg)]"
-      style={{ fontFamily, fontSize, lineHeight }}
+      className="overflow-hidden rounded-lg border border-border-strong px-3 py-2"
+      style={{ fontFamily, fontSize, lineHeight, background: scheme.background, color: scheme.foreground }}
     >
       <div>
-        <span className="text-success">C:\Users\you\projects</span>&gt; git status
+        <span style={{ color: scheme.colors[1] }}>C:\Users\you\projects</span>&gt; git status
       </div>
-      <div className="text-tx-muted">0O 1lI {"{}"} =&gt; != 日本語 ✓ ─│┼</div>
+      <div>
+        <span style={{ color: scheme.colors[0] }}>modified:</span> src/App.tsx <span style={{ color: scheme.colors[3] }}>0O 1lI {"{}"} =&gt;</span> 日本語 ✓ ─│┼
+      </div>
       <div className="flex items-center">
-        <span className="text-success">C:\Users\you\projects</span>&gt;
+        <span style={{ color: scheme.colors[1] }}>C:\Users\you\projects</span>&gt;
         <span className={`ml-1 inline-block h-[1.1em] ${cursor}`} />
       </div>
     </div>

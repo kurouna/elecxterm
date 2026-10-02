@@ -16,14 +16,14 @@ npm run build        # TypeScript type-check + Vite bundle
 npm run tauri build  # Produce release installer (.msi / .exe)
 ```
 
-On this machine, `cargo` may fail to find the MSVC toolchain. Use the wrapper scripts that set `PATH`/`INCLUDE`/`LIB` for VS 2026 + Windows SDK before building:
+Rust (rustup, stable-msvc) and VS 2022 Build Tools are installed on this machine; `cargo` lives in `%USERPROFILE%\.cargo\bin` (open a new shell if it isn't on PATH). `src-tauri/icons` is gitignored — run `npx tauri icon ./app-icon.svg` once before the first Rust build. The wrapper scripts below target a VS 2026 install from another machine and Use the wrapper scripts that set `PATH`/`INCLUDE`/`LIB` for VS 2026 + Windows SDK before building:
 
 ```powershell
 ./dev.ps1        # env setup + npm run tauri dev
 ./build_fix.ps1  # env setup + cargo build (in src-tauri)
 ```
 
-There is no lint or JS test runner configured. TypeScript strict mode is enforced via `tsconfig.json`. `cargo test` (in src-tauri) runs a few Rust unit tests.
+There is no lint or JS test runner configured. TypeScript strict mode is enforced via `tsconfig.json`. `cargo test` (in src-tauri) runs Rust unit tests; `cargo test -- --ignored` spawns real cmd / PowerShell through ConPTY to check the shell-integration sequences.
 
 ## Architecture
 
@@ -50,6 +50,9 @@ There is no lint or JS test runner configured. TypeScript strict mode is enforce
 - `TitleBar.tsx` + `TabBar.tsx` — tabs live in the title bar (drag via both `-webkit-app-region` and `data-tauri-drag-region`; don't add an `onDoubleClick` maximize — the OS/Tauri already does it).
 - `PaneOverview.tsx` — all panes across tabs as live cards (`Ctrl+Shift+O`), and the hold-to-switch MRU mode (`Ctrl+Tab`, commit on Ctrl release; `services/modifiers.ts` tracks Ctrl so quick taps work).
 - `CommandPalette.tsx` (`Ctrl+Shift+K`, fuzzy search, recents, "Go to" pane/tab items only while searching), `SettingsPanel.tsx` (`Ctrl+,`; terminal prefs live in `Preferences` in `types.ts`, persisted by useLayout), `ShortcutHelp.tsx`, `Prompt.tsx` (only rename now), `NotificationOverlay.tsx` (toast stack). Overlays share `Overlay` from `ui.tsx`.
+- Command tracking: shell integration emits OSC 133 A/B/D (pwsh also the exit code). `terminalRegistry` anchors the prompt end with an xterm marker and reads the command text lazily (the echo isn't in the buffer yet when Enter is pressed). `PaneStateStore.onCommandFinished` feeds `hooks/useCommandNotifications.ts` (toast vs. OS notification via `tauri-plugin-notification` + `requestUserAttention`).
+- Terminal color presets live in `src/theme.ts` (`TERMINAL_SCHEMES`, `applyScheme`); the pane body background follows the scheme background.
+- `hooks/useWindowMaterial.ts` applies Mica / Mica Alt (Windows 11 only, detected via UA-CH) and sets `<html data-material>` so CSS makes only the chrome/gaps translucent. Window theme is synced with `setTheme` (null when the app theme is "system").
 - Theme switches go through `runThemeTransition` (`src/themeTransition.ts`: View Transitions circular reveal + `flushSync`). Terminal appearance is applied in a layout effect so the new snapshot already has the new colors — keep it that way.
 - Tab colors: `Tab.color` + `src/tabColors.ts` (`tabAccent`) shared by the tab bar and the overview.
 - `src/hooks/useKeybinds.ts` — table-driven global shortcuts on a single window capture listener; also `preventDefault`s browser shortcuts (Ctrl+R/P/F/…, F5). While an overlay is open, only `global` bindings fire so the overlay gets the keys. Display strings live in `src/keymap.ts`; keep both in sync. Existing bindings are a user requirement — don't change them.

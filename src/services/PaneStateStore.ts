@@ -8,6 +8,16 @@ import { PaneStatus } from "../types";
  * `getAllStates` は「変化がなければ同一参照」を返す必要がある。
  * そのため状態オブジェクトは不変で扱い、全体スナップショットは notify 時にのみ作り直す。
  */
+/** シェル統合（OSC 133）で計測したコマンド 1 回分 */
+export interface CommandRun {
+  paneId: string;
+  command: string;
+  durationMs: number;
+  /** cmd は終了コードを通知できないので undefined */
+  exitCode?: number;
+  finishedAt: number;
+}
+
 export interface PaneVolatileState {
   status: PaneStatus;
   /** OSC 0/2 で通知されたウィンドウタイトル */
@@ -21,6 +31,10 @@ export interface PaneVolatileState {
   activity: boolean;
   /** フォーカスされていない間にベルが鳴った */
   bell: boolean;
+  /** 直前に完了したコマンド（空コマンドは除く） */
+  lastCommand?: CommandRun;
+  /** 実行中のコマンドと開始時刻 */
+  runningCommand?: { command: string; startedAt: number };
 }
 
 type Listener = () => void;
@@ -45,6 +59,7 @@ class PaneStateStore {
   private focusedPaneId: string | null = null;
   /** フォーカスされた順（先頭が最新）。Ctrl+Tab の切り替え順に使う */
   private mru: readonly string[] = EMPTY_MRU;
+  private commandListeners = new Set<(run: CommandRun) => void>();
 
   /** 特定のペインの状態を取得（未登録なら共有の既定値を返す = 参照安定） */
   getPaneState(id: string): PaneVolatileState {
@@ -63,7 +78,7 @@ class PaneStateStore {
   /** ペインの生成を記録する（活動検知の猶予の起点） */
   register(id: string) {
     this.createdAt.set(id, Date.now());
-    this.update(id, { status: "starting", exitCode: undefined });
+    this.update(id, { status: "starting", exitCode: undefined, runningCommand: undefined });
   }
 
   /** 状態を部分更新する。実際に値が変わったときだけ通知する */
@@ -88,6 +103,27 @@ class PaneStateStore {
     if (id === this.focusedPaneId) return;
     if (now - (this.createdAt.get(id) ?? 0) < ACTIVITY_GRACE_MS) return;
     if (!this.getPaneState(id).activity) this.update(id, { activity: true });
+  }
+
+  /** コマンドの開始を記録する */
+  commandStarted(id: string, command: string) {
+    this.update(id, { runningCommand: command ? { command, startedAt: Date.now() } : undefined });
+  }
+
+  /** コマンドの完了を記録し、購読者（通知）へ知らせる */
+  commandFinished(run: CommandRun) {
+    this.update(run.paneId, {
+      runningCommand: undefined,
+      ...(run.command ? { lastCommand: run } : {}),
+    });
+    if (run.command) this.commandListeners.forEach((l) => l(run));
+  }
+
+  onCommandFinished(listener: (run: CommandRun) => void): () => void {
+    this.commandListeners.add(listener);
+    return () => {
+      this.commandListeners.delete(listener);
+    };
   }
 
   markBell(id: string) {

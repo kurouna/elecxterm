@@ -169,7 +169,7 @@ export function TabBar({
                 title={`${title}${info.count > 1 ? ` · ${info.count} panes` : ""}${index < 9 ? ` · Ctrl+Alt+${index + 1}` : ""}`}
                 className={`titlebar-no-drag group relative flex h-[32px] min-w-[120px] max-w-[220px] flex-shrink-0 select-none items-center gap-2 rounded-t-lg px-3 text-[12px] outline-none ${
                   isActive
-                    ? "bg-bg-main text-tx-primary"
+                    ? "bg-tab-active text-tx-primary"
                     : "text-tx-muted hover:bg-tx-primary/[0.05] hover:text-tx-secondary"
                 }`}
               >

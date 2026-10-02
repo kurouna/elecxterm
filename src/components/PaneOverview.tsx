@@ -17,6 +17,7 @@ import {
 } from "../services/paneInfo";
 import { KEYS } from "../keymap";
 import { tabAccent } from "../tabColors";
+import { formatDuration } from "../services/notifications";
 import { Kbd, ShellBadge, StatusDot } from "./ui";
 
 export type OverviewMode = "browse" | "switch";
@@ -540,8 +541,23 @@ const PaneCard = memo(function PaneCard({
           <span className={status === "error" ? "text-danger" : ""}>
             {status === "error" ? "Failed to start" : `Exited${state?.exitCode != null ? ` (${state.exitCode})` : ""}`}
           </span>
+        ) : state?.runningCommand ? (
+          // シェル統合で分かる「今実行中のコマンド」と経過時間
+          <span className="min-w-0 truncate text-warning">
+            ▶ <span className="font-mono">{state.runningCommand.command}</span> · {formatDuration(now - state.runningCommand.startedAt)}
+          </span>
         ) : state?.activity ? (
           <span className="text-accent">New output</span>
+        ) : state?.lastCommand ? (
+          <span className="min-w-0 truncate">
+            {state.lastCommand.exitCode ? (
+              <span className="text-danger">✗ exit {state.lastCommand.exitCode}</span>
+            ) : (
+              <span className="text-success">✓</span>
+            )}{" "}
+            <span className="font-mono">{state.lastCommand.command}</span> · {formatDuration(state.lastCommand.durationMs)} ·{" "}
+            {relativeTime(state.lastCommand.finishedAt, now)}
+          </span>
         ) : (
           <span>{lastOutputAt ? `Output ${relativeTime(lastOutputAt, now)}` : "Idle"}</span>
         )}

@@ -18,6 +18,7 @@ interface FakeShell {
   line: string;
   channel: Channel<ArrayBuffer>;
   timer: number | null;
+  lastExit: number;
 }
 
 const shells = new Map<string, FakeShell>();
@@ -34,9 +35,12 @@ function isPwsh(sh: FakeShell) {
 }
 
 function prompt(sh: FakeShell) {
-  // 実機のシェル統合と同じく OSC 9;9 で cwd を通知する
-  const osc = `\x1b]9;9;${sh.cwd}\x1b\\`;
-  send(sh, isPwsh(sh) ? `${osc}\x1b[32mPS\x1b[0m ${sh.cwd}> ` : `${osc}${sh.cwd}>`);
+  // 実機のシェル統合と同じく OSC 133（コマンド境界）と OSC 9;9（cwd）を送る
+  const ST = "\x1b\\";
+  const marks = `\x1b]133;D;${sh.lastExit}${ST}\x1b]133;A${ST}\x1b]9;9;${sh.cwd}${ST}`;
+  const text = isPwsh(sh) ? `\x1b[32mPS\x1b[0m ${sh.cwd}> ` : `${sh.cwd}>`;
+  send(sh, `${marks}${text}\x1b]133;B${ST}`);
+  sh.lastExit = 0;
 }
 
 function resolvePath(cwd: string, target: string): string {
@@ -84,6 +88,20 @@ function run(sh: FakeShell, input: string) {
     case "clear":
       send(sh, "\x1b[2J\x1b[3J\x1b[H");
       break;
+    case "sleep": {
+      // 長時間コマンドの模擬（完了通知の確認用）
+      const seconds = Number(arg) || 5;
+      sh.timer = window.setTimeout(() => {
+        sh.timer = null;
+        send(sh, `slept ${seconds}s\r\n`);
+        prompt(sh);
+      }, seconds * 1000);
+      return;
+    }
+    case "fail":
+      sh.lastExit = Number(arg) || 1;
+      send(sh, `failing with exit code ${sh.lastExit}\r\n`);
+      break;
     case "bell":
       send(sh, "\x07");
       break;
@@ -112,7 +130,7 @@ function run(sh: FakeShell, input: string) {
       shells.delete(sh.id);
       return;
     default:
-      send(sh, `'${cmd}' is not recognized as an internal or external command (mock shell).\r\nTry: dir, cd, echo, ping, colors, bell, cls, exit\r\n`);
+      send(sh, `'${cmd}' is not recognized as an internal or external command (mock shell).\r\nTry: dir, cd, echo, ping, sleep N, fail N, colors, bell, cls, exit\r\n`);
   }
   send(sh, "\r\n");
   prompt(sh);
@@ -165,6 +183,7 @@ export function installTauriMock() {
             line: "",
             channel: args.onData,
             timer: null,
+            lastExit: 0,
           };
           shells.set(id, sh);
           setTimeout(() => {
@@ -206,6 +225,17 @@ export function installTauriMock() {
           return null;
         case "plugin:window|is_maximized":
           return false;
+        case "plugin:window|set_effects":
+          // Mica の代わりに壁紙っぽいグラデーションを敷いて、半透明部分を確認できるようにする
+          document.documentElement.style.background = args.value
+            ? "linear-gradient(135deg, #1d4350 0%, #a43931 55%, #e0a96d 100%)"
+            : "";
+          return null;
+        case "plugin:notification|is_permission_granted":
+          return true;
+        case "plugin:window|request_user_attention":
+          console.info("[mock] request_user_attention", args.value);
+          return null;
         case "plugin:opener|open_url":
           window.open(args.url, "_blank");
           return null;

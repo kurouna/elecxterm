@@ -1,4 +1,4 @@
-import { Terminal, ITheme } from "@xterm/xterm";
+import { Terminal, ITheme, IMarker } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -65,6 +65,8 @@ interface InternalEntry extends TerminalEntry {
   /** 現在の PTY に紐づく購読の解除 */
   disposePty: () => void;
   disposeTerminal: () => void;
+  /** シェル統合の追跡状態（実行中コマンドなど）を捨てる。シェルの再起動時に使う */
+  resetShellState: () => void;
 }
 
 const entries = new Map<string, InternalEntry>();
@@ -199,6 +201,7 @@ function createEntry(host: HTMLElement, options: TerminalAttachOptions): Interna
     disposed: false,
     disposePty: () => {},
     disposeTerminal: () => {},
+    resetShellState: () => {},
   };
 
   // --- シェル統合: カレントディレクトリ (OSC 9;9 = Windows Terminal 方式 / OSC 7) ---
@@ -219,6 +222,93 @@ function createEntry(host: HTMLElement, options: TerminalAttachOptions): Interna
     }
     return true;
   });
+  // --- シェル統合: コマンドの開始・終了 (OSC 133 / FinalTerm マーク) ---
+  // A = プロンプト開始（= 直前のコマンドの終了）、B = プロンプト終了（入力開始位置）、
+  // C = コマンド実行開始、D;<code> = コマンド終了。cmd は C を出せないため、
+  // プロンプト上で Enter が押された時点を開始とみなす。
+  // 入力開始位置はマーカーで覚える（スクロールバックが溢れて行番号がずれても追従する）。
+  // コマンド文字列はシェルのエコーが描画されてから読む必要があるため、Enter の直後ではなく
+  // 少し遅らせて／完了時に読み直す。
+  let promptEnd: { marker: IMarker; col: number } | null = null;
+  let running: { command: string; startedAt: number; anchor: { marker: IMarker; col: number } | null } | null = null;
+  let lastExitCode: number | undefined;
+  let readTimer: number | null = null;
+
+  const readCommandLine = (anchor: { marker: IMarker; col: number } | null): string => {
+    if (!anchor || anchor.marker.isDisposed || anchor.marker.line < 0) return "";
+    const buffer = terminal.buffer.active;
+    const row = anchor.marker.line;
+    let text = buffer.getLine(row)?.translateToString(true, anchor.col) ?? "";
+    for (let y = row + 1; buffer.getLine(y)?.isWrapped; y++) {
+      text += buffer.getLine(y)?.translateToString(true) ?? "";
+    }
+    return text.trim();
+  };
+
+  const clearPromptEnd = () => {
+    promptEnd?.marker.dispose();
+    promptEnd = null;
+  };
+
+  const startCommand = () => {
+    if (running) return;
+    running = { command: "", startedAt: Date.now(), anchor: promptEnd };
+    promptEnd = null;
+    lastExitCode = undefined;
+    paneStateStore.commandStarted(paneId, "…");
+    // エコーが描画された頃にコマンド名を読み、実行中表示を更新する
+    if (readTimer !== null) window.clearTimeout(readTimer);
+    readTimer = window.setTimeout(() => {
+      readTimer = null;
+      if (!running) return;
+      running.command = readCommandLine(running.anchor);
+      paneStateStore.commandStarted(paneId, running.command);
+    }, 150);
+  };
+
+  const finishCommand = () => {
+    if (!running) return;
+    const run = running;
+    running = null;
+    if (readTimer !== null) window.clearTimeout(readTimer);
+    readTimer = null;
+    const command = readCommandLine(run.anchor) || run.command;
+    run.anchor?.marker.dispose();
+    paneStateStore.commandFinished({
+      paneId,
+      command,
+      durationMs: Date.now() - run.startedAt,
+      exitCode: lastExitCode,
+      finishedAt: Date.now(),
+    });
+  };
+
+  entry.resetShellState = () => {
+    clearPromptEnd();
+    running?.anchor?.marker.dispose();
+    running = null;
+    lastExitCode = undefined;
+    if (readTimer !== null) window.clearTimeout(readTimer);
+    readTimer = null;
+  };
+
+  const osc133 = terminal.parser.registerOscHandler(133, (data) => {
+    const [kind, arg] = data.split(";");
+    if (kind === "A") {
+      finishCommand();
+    } else if (kind === "B") {
+      clearPromptEnd();
+      const marker = terminal.registerMarker(0);
+      if (marker) promptEnd = { marker, col: terminal.buffer.active.cursorX };
+    } else if (kind === "C") {
+      startCommand();
+    } else if (kind === "D") {
+      const code = Number(arg);
+      lastExitCode = arg !== undefined && arg !== "" && Number.isFinite(code) ? code : undefined;
+    }
+    return true;
+  });
+
   const titleDisposable = terminal.onTitleChange((title) => paneStateStore.update(paneId, { title }));
   const bellDisposable = terminal.onBell(() => paneStateStore.markBell(paneId));
 
@@ -230,6 +320,8 @@ function createEntry(host: HTMLElement, options: TerminalAttachOptions): Interna
       if (data === "\r") restartTerminal(paneId);
       return;
     }
+    // プロンプト上での Enter をコマンド開始とみなす（入力行は送信前に読む）
+    if (promptEnd && !running && data.includes("\r")) startCommand();
     // ready を経由することで、PTY 起動前に打たれたキーも順序どおり送られる
     entry.ready.then((ok) => {
       if (ok) ptyBridge.write(entry.ptyId, data).catch(() => {});
@@ -267,7 +359,8 @@ function createEntry(host: HTMLElement, options: TerminalAttachOptions): Interna
 
   entry.disposeTerminal = () => {
     rootEl.removeEventListener("pointerup", onPointerUp);
-    [oscCwd, oscFileUrl, titleDisposable, bellDisposable, dataDisposable, resizeDisposable]
+    entry.resetShellState();
+    [oscCwd, oscFileUrl, osc133, titleDisposable, bellDisposable, dataDisposable, resizeDisposable]
       .forEach((d) => d.dispose());
     webglAddon?.dispose();
     terminal.dispose();
@@ -287,6 +380,7 @@ function startPty(entry: InternalEntry) {
   const { paneId, terminal } = entry;
   const ptyId = entry.generation === 0 ? paneId : `${paneId}_r${entry.generation}`;
   entry.ptyId = ptyId;
+  entry.resetShellState();
   paneStateStore.register(paneId);
 
   let disposed = false;

@@ -10,11 +10,14 @@ import { PaneOverview, OverviewMode } from "./components/PaneOverview";
 import { ShortcutHelp } from "./components/ShortcutHelp";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { runThemeTransition } from "./themeTransition";
-import { NotificationOverlay, Toast, ToastType } from "./components/NotificationOverlay";
+import { NotificationOverlay, Toast, ToastAction, ToastType } from "./components/NotificationOverlay";
 import { PaneActions, PaneActionsContext, PaneUi, PaneUiContext } from "./components/PaneContext";
 import { ptyBridge } from "./pty-bridge";
 import { useLayout, DEFAULT_FONT_SIZE, MAX_PANES, DEFAULT_SHELL, PWSH_SHELL } from "./hooks/useLayout";
 import { useKeybinds } from "./hooks/useKeybinds";
+import { useWindowMaterial } from "./hooks/useWindowMaterial";
+import { useCommandNotifications } from "./hooks/useCommandNotifications";
+import { applyScheme } from "./theme";
 import { useAllPaneStates } from "./hooks/usePaneState";
 import { CommandItem } from "./types";
 import { Theme, useTheme } from "./ThemeContext";
@@ -39,12 +42,20 @@ function App() {
   const [homeDir, setHomeDir] = useState<string | undefined>(undefined);
   const toastId = useRef(0);
 
-  const notify = useCallback((message: string, type: ToastType = "warning") => {
-    toastId.current += 1;
-    const id = toastId.current;
-    // 同じ文言が連続した場合は積み重ねず置き換える
-    setToasts((prev) => [...prev.filter((t) => t.message !== message), { id, message, type }].slice(-4));
-  }, []);
+  const notify = useCallback(
+    (message: string, type: ToastType = "warning", extra?: { detail?: string; action?: ToastAction }) => {
+      toastId.current += 1;
+      const id = toastId.current;
+      // 同じ内容が連続した場合は積み重ねず置き換える
+      setToasts((prev) =>
+        [
+          ...prev.filter((t) => t.message !== message || t.detail !== extra?.detail),
+          { id, message, type, ...extra },
+        ].slice(-4)
+      );
+    },
+    []
+  );
   const dismissToast = useCallback((id: number) => setToasts((prev) => prev.filter((t) => t.id !== id)), []);
 
   const layout = useLayout({ onNotification: notify });
@@ -59,6 +70,24 @@ function App() {
     showPaneHeaders,
   } = layout;
   const states = useAllPaneStates();
+  const { preferences } = layout;
+
+  // 端末の配色: プリセットが選ばれていればそれを、無ければ UI テーマ由来の配色を使う
+  const effectiveTerminalTheme = useMemo(
+    () => applyScheme(terminalTheme, preferences.colorScheme, resolvedTheme),
+    [terminalTheme, preferences.colorScheme, resolvedTheme]
+  );
+
+  // Windows 11 の Mica / Mica Alt
+  const micaSupported = useWindowMaterial(preferences.windowMaterial, theme);
+
+  // 長時間コマンドの完了通知
+  useCommandNotifications({
+    thresholdSeconds: preferences.notifyAfterSeconds,
+    tabs,
+    notify,
+    focusPane: layout.focusPane,
+  });
 
   // ホームディレクトリ（パスの ~ 表記と開始ディレクトリの既定値に使う）
   useEffect(() => {
@@ -199,14 +228,14 @@ function App() {
     () => ({
       fontFamily,
       fontSize,
-      terminalTheme,
+      terminalTheme: effectiveTerminalTheme,
       showHeaders: showPaneHeaders,
       findPaneId,
       homeDir,
       overlayOpen,
-      preferences: layout.preferences,
+      preferences,
     }),
-    [fontFamily, fontSize, terminalTheme, showPaneHeaders, findPaneId, homeDir, overlayOpen, layout.preferences]
+    [fontFamily, fontSize, effectiveTerminalTheme, showPaneHeaders, findPaneId, homeDir, overlayOpen, preferences]
   );
 
   const activePaneNode = activeTab ? findPane(activeTab.layout, activePane) : undefined;
@@ -297,7 +326,7 @@ function App() {
   );
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-bg-main">
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-app">
       <TitleBar
         resolvedTheme={resolvedTheme}
         onToggleTheme={toggleTheme}
@@ -373,8 +402,10 @@ function App() {
         onFontFamilyChange={layout.updateFontFamily}
         fontSize={fontSize}
         onFontSizeChange={layout.updateFontSize}
-        preferences={layout.preferences}
+        preferences={preferences}
         onPreferencesChange={layout.updatePreferences}
+        resolvedTheme={resolvedTheme}
+        micaSupported={micaSupported === true}
         showPaneHeaders={showPaneHeaders}
         onShowPaneHeadersChange={layout.setShowPaneHeaders}
         startDirectory={activeTab?.defaultCwd ?? layout.appDefaultCwd ?? ""}

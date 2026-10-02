@@ -20,17 +20,22 @@ const READ_BUFFER_SIZE: usize = 16 * 1024;
 /// シェル統合（カレントディレクトリ通知）を無効化するための環境変数
 const NO_SHELL_INTEGRATION_ENV: &str = "ELECXTERM_NO_SHELL_INTEGRATION";
 
-/// PowerShell の prompt 関数をラップし、プロンプト表示のたびに OSC 9;9 で
-/// カレントディレクトリを通知するスクリプト。プロファイル（oh-my-posh 等）が
-/// 定義した prompt を壊さないよう、既存の関数を呼び出した結果の前に付け足すだけにする。
+/// PowerShell の prompt 関数をラップし、プロンプト表示のたびに
+/// - OSC 133;D;<終了コード>（直前のコマンドの終了）
+/// - OSC 133;A（プロンプト開始）/ OSC 133;B（プロンプト終了 = 入力開始位置）
+/// - OSC 9;9（カレントディレクトリ）
+/// を送らせるスクリプト。プロファイル（oh-my-posh 等）が定義した prompt を壊さないよう、
+/// 既存の関数を呼び出した結果の前後に付け足すだけにする。`$?` は最初に読まないと上書きされる。
 const PWSH_INTEGRATION_SCRIPT: &str = r#"
 $global:__elecxtermPrompt = $function:prompt
 function global:prompt {
+  $ok = $?
+  $code = if ($ok) { 0 } elseif ($global:LASTEXITCODE) { $global:LASTEXITCODE } else { 1 }
   $out = & $global:__elecxtermPrompt
+  $e = [char]27
   $loc = $executionContext.SessionState.Path.CurrentLocation
-  if ($loc.Provider.Name -eq 'FileSystem') {
-    "$([char]27)]9;9;$($loc.ProviderPath)$([char]27)\" + $out
-  } else { $out }
+  $cwd = if ($loc.Provider.Name -eq 'FileSystem') { "$e]9;9;$($loc.ProviderPath)$e\" } else { '' }
+  "$e]133;D;$code$e\$e]133;A$e\$cwd" + ($out -join '') + "$e]133;B$e\"
 }
 "#;
 
@@ -296,9 +301,11 @@ fn build_command(shell: &str, cwd: Option<&str>) -> CommandBuilder {
     }
 
     if is_shell(shell, "cmd") {
+        // cmd の PROMPT は表示のたびに展開される。終了コードは取れないので 133;D は値なし。
+        // 利用者が既にシェル統合を設定している場合は触らない
         let prompt = std::env::var("PROMPT").unwrap_or_else(|_| "$P$G".to_string());
-        if !prompt.contains("]9;9;") {
-            cmd.env("PROMPT", format!("$e]9;9;$P$e\\{prompt}"));
+        if !prompt.contains("]9;9;") && !prompt.contains("]133;") {
+            cmd.env("PROMPT", format!(r"$e]133;D$e\$e]133;A$e\$e]9;9;$P$e\{prompt}$e]133;B$e\"));
         }
     } else if is_shell(shell, "pwsh") || is_shell(shell, "powershell") {
         // -EncodedCommand は UTF-16LE の Base64。引用符のエスケープ問題を避けられる
@@ -360,6 +367,72 @@ mod tests {
         assert_eq!(base64_encode(b"fo"), "Zm8=");
         assert_eq!(base64_encode(b"foo"), "Zm9v");
         assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+    }
+
+    /// 実際のシェルを ConPTY で起動し、シェル統合のエスケープシーケンスが出ることを確かめる。
+    /// 端末環境に依存するので通常は実行しない（`cargo test -- --ignored` で実行）。
+    #[cfg(windows)]
+    fn run_shell(shell: &str, input: &str) -> String {
+        use std::sync::mpsc;
+        let pair = NativePtySystem::default()
+            .openpty(PtySize { rows: 30, cols: 120, pixel_width: 0, pixel_height: 0 })
+            .expect("openpty");
+        let mut child = pair.slave.spawn_command(build_command(shell, None)).expect("spawn");
+        drop(pair.slave);
+        let mut reader = pair.master.try_clone_reader().expect("reader");
+        let mut writer = pair.master.take_writer().expect("writer");
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            while let Ok(n) = reader.read(&mut buf) {
+                if n == 0 || tx.send(buf[..n].to_vec()).is_err() {
+                    break;
+                }
+            }
+        });
+        // ConPTY は起動直後に端末への問い合わせ（DSR）を送ってくるので、カーソル位置を答えておく
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        writer.write_all(b"\x1b[1;1R").ok();
+        writer.write_all(input.as_bytes()).expect("write");
+        writer.flush().ok();
+        let mut out = Vec::new();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while std::time::Instant::now() < deadline {
+            if let Ok(chunk) = rx.recv_timeout(std::time::Duration::from_millis(200)) {
+                out.extend(chunk);
+            }
+            if matches!(child.try_wait(), Ok(Some(_))) {
+                break;
+            }
+        }
+        let _ = child.kill();
+        String::from_utf8_lossy(&out).into_owned()
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore]
+    fn cmd_emits_shell_integration_sequences() {
+        let out = run_shell("cmd.exe", "cd /d C:\\Windows\r\nexit\r\n");
+        assert!(out.contains("\x1b]9;9;C:\\Windows"), "cwd not reported: {out:?}");
+        assert!(out.contains("\x1b]133;A"), "prompt start not reported: {out:?}");
+        assert!(out.contains("\x1b]133;B"), "prompt end not reported: {out:?}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore]
+    fn powershell_reports_exit_code() {
+        // pwsh (PowerShell 7) が無ければ、アプリと同じく Windows PowerShell で確かめる
+        let shell = if std::process::Command::new("pwsh.exe").arg("-v").output().is_ok() {
+            "pwsh.exe"
+        } else {
+            "powershell.exe"
+        };
+        eprintln!("testing shell integration with {shell}");
+        let out = run_shell(shell, "cmd /c exit 3\rSet-Location C:\\Windows\rexit\r");
+        assert!(out.contains("\x1b]133;D;3"), "exit code not reported: {out:?}");
+        assert!(out.contains("\x1b]9;9;C:\\Windows"), "cwd not reported: {out:?}");
     }
 
     #[test]

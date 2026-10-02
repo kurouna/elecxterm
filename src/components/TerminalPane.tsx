@@ -252,7 +252,11 @@ function TerminalPaneComponent({ pane, isActive }: TerminalPaneProps) {
         </div>
       )}
 
-      <div className="relative min-h-0 flex-1" onContextMenu={handleContextMenu}>
+      <div
+        className="relative min-h-0 flex-1"
+        style={{ background: ui.terminalTheme.background }}
+        onContextMenu={handleContextMenu}
+      >
         {/* 減光は端末本体だけに掛け、検索バーやボタンは常にくっきり見せる */}
         <div ref={hostRef} className="pane-body h-full w-full px-2 pb-1 pt-1.5" />
 

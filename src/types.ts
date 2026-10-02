@@ -38,6 +38,8 @@ export type TabColor = (typeof TAB_COLORS)[number];
 
 export type CursorStyle = "bar" | "block" | "underline";
 export type DimLevel = "off" | "subtle" | "strong";
+/** ウィンドウの背景素材。mica / tabbed（Mica Alt）は Windows 11 のみ */
+export type WindowMaterial = "solid" | "mica" | "tabbed";
 
 /** 端末の見た目に関する設定（設定パネルで変更し、永続化する） */
 export interface Preferences {
@@ -46,6 +48,11 @@ export interface Preferences {
   /** 非アクティブペインを沈める強さ */
   dimInactive: DimLevel;
   lineHeight: number;
+  /** 端末の配色プリセット ID（src/theme.ts の TERMINAL_SCHEMES） */
+  colorScheme: string;
+  windowMaterial: WindowMaterial;
+  /** この秒数以上かかったコマンドの完了を通知する（0 = 通知しない） */
+  notifyAfterSeconds: number;
 }
 
 /** ペインのステータス */
