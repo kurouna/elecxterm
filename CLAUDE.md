@@ -80,5 +80,6 @@ There is no lint or JS test runner configured. TypeScript strict mode is enforce
 - **No decorations window**: The app window is transparent and frameless (`tauri.conf.json`). `TitleBar.tsx` provides custom window chrome.
 - **CSP is disabled** (`"security": { "csp": null }`) — avoid adding external script sources. UI fonts are system fonts (no Google Fonts) so the app works offline.
 - **Tauri v2 API**: Use `@tauri-apps/api/core` for `invoke()`, `@tauri-apps/api/event` for `listen()`. Tauri v1 APIs are incompatible.
+- **Keep Tauri versions in lockstep**: `tauri build` (and therefore the release CI) fails if an npm `@tauri-apps/*` package and its Rust crate differ in major.minor (e.g. `@tauri-apps/api` 2.12 vs `tauri` 2.11). `cargo test`/`cargo build` do not check this — after touching either lockfile, run `npm run tauri build` (or `npx tauri info`) before tagging.
 - **Tailwind v4**: Uses `@theme` directive and CSS variables rather than `tailwind.config.js`. Class names follow v4 conventions. Keep bare `*` resets inside `@layer base`, or they override padding/margin utilities.
 - **Text rendering**: xterm is configured with `allowTransparency: false` and integer `letterSpacing` in `terminalRegistry.ts` to avoid blurry glyphs on the transparent window — don't revert these for visual tweaks.
