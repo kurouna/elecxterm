@@ -60,8 +60,8 @@ export function TitleBar({ children, resolvedTheme, onToggleTheme, onOverview, o
         {children}
       </div>
 
-      {/* 余白はすべてドラッグ領域 */}
-      <div data-tauri-drag-region className="w-6 shrink-0" />
+      {/* タブがいくつ増えても必ず残る、ウィンドウ移動用の余白（タブ列の空きもドラッグ領域） */}
+      <div data-tauri-drag-region className="w-16 shrink-0" />
 
       <div className="titlebar-no-drag titlebar-dimmable flex items-center gap-0.5 pr-2">
         <IconButton label="Pane overview" shortcut={KEYS.overview} onClick={onOverview}>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useLayoutEffect } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import { Bell, ChevronDown, LayoutGrid, Maximize2, Pencil, Plus, RotateCcw, Terminal, X, XSquare } from "lucide-react";
 import { Tab, TabColor, TAB_COLORS } from "../types";
@@ -63,6 +64,13 @@ export function TabBar({
   const menuRef = useRef<HTMLDivElement>(null);
   // Escape でキャンセルした直後の blur で確定してしまわないためのフラグ
   const cancelRenameRef = useRef(false);
+  /**
+   * タブが 1 つだけのときは、タブをつかんでウィンドウを動かせるようにする（Chrome と同じ）。
+   * 押した瞬間ではなく少し動かしてから移動を始めることで、クリック・ダブルクリック
+   * （選択・名前変更）はそのまま使える。
+   */
+  const windowDragRef = useRef<{ x: number; y: number } | null>(null);
+  const singleTab = tabs.length === 1;
 
   const startRename = (tab: Tab, states: Record<string, PaneVolatileState>) => {
     cancelRenameRef.current = false;
@@ -145,14 +153,26 @@ export function TabBar({
                 aria-selected={isActive}
                 tabIndex={isActive ? 0 : -1}
                 layout="position"
-                dragListener={!isRenaming}
+                dragListener={!isRenaming && !singleTab}
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.94, transition: { duration: 0.12 } }}
                 transition={{ type: "spring", damping: 32, stiffness: 520 }}
                 whileDrag={{ zIndex: 50, cursor: "grabbing" }}
                 onPointerDown={(e: React.PointerEvent) => {
-                  if (e.button === 0 && !isRenaming) onTabSelect(tab.id);
+                  if (e.button !== 0 || isRenaming) return;
+                  onTabSelect(tab.id);
+                  windowDragRef.current = singleTab ? { x: e.clientX, y: e.clientY } : null;
+                }}
+                onPointerMove={(e: React.PointerEvent) => {
+                  const start = windowDragRef.current;
+                  if (!start || (e.buttons & 1) === 0) return;
+                  if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < 4) return;
+                  windowDragRef.current = null;
+                  getCurrentWindow().startDragging().catch(() => {});
+                }}
+                onPointerUp={() => {
+                  windowDragRef.current = null;
                 }}
                 onAuxClick={(e: React.MouseEvent) => {
                   // 中クリックで閉じる（ブラウザ・Windows Terminal と同じ）
@@ -167,7 +187,7 @@ export function TabBar({
                   setMenu({ x: e.clientX, y: e.clientY, tabId: tab.id, kind: "tab" });
                 }}
                 title={`${title}${info.count > 1 ? ` · ${info.count} panes` : ""}${index < 9 ? ` · Ctrl+Alt+${index + 1}` : ""}`}
-                className={`titlebar-no-drag group relative flex h-[32px] min-w-[120px] max-w-[220px] flex-shrink-0 select-none items-center gap-2 rounded-t-lg px-3 text-[12px] outline-none ${
+                className={`titlebar-no-drag group @container relative flex h-[32px] w-[200px] min-w-[84px] shrink select-none items-center gap-2 rounded-t-lg px-3 text-[12px] outline-none ${
                   isActive
                     ? "bg-tab-active text-tx-primary"
                     : "text-tx-muted hover:bg-tx-primary/[0.05] hover:text-tx-secondary"
@@ -230,10 +250,10 @@ export function TabBar({
                 )}
 
                 {!isRenaming && tab.zoomed && (
-                  <Maximize2 size={11} className="shrink-0 text-accent" aria-label="Zoomed" />
+                  <Maximize2 size={11} className="shrink-0 text-accent @max-[150px]:hidden" aria-label="Zoomed" />
                 )}
                 {!isRenaming && info.count > 1 && (
-                  <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-tx-primary/[0.06] px-1 font-mono text-[10px] text-tx-muted">
+                  <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-tx-primary/[0.06] px-1 font-mono text-[10px] text-tx-muted @max-[150px]:hidden">
                     <LayoutGrid size={9} />
                     {info.count}
                   </span>
@@ -249,7 +269,10 @@ export function TabBar({
                       onTabClose(tab.id);
                     }}
                     className={`-mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded transition-opacity hover:bg-tx-primary/10 hover:text-tx-primary ${
-                      isActive ? "opacity-60 hover:opacity-100" : "opacity-0 group-hover:opacity-60"
+                      isActive
+                        ? "opacity-60 hover:opacity-100"
+                        : // 細いタブではホバー時だけ場所を取り、タイトルの幅を確保する（Chrome と同じ）
+                          "opacity-0 group-hover:opacity-60 @max-[120px]:hidden @max-[120px]:group-hover:flex"
                     }`}
                   >
                     <X size={12} />
