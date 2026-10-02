@@ -35,6 +35,8 @@ interface PaneOverviewProps {
   onClosePane: (paneId: string) => void;
   onNewTab: () => void;
   onDismiss: () => void;
+  /** 確認ダイアログなどを上に重ねている間はキー操作を受け付けない */
+  suspended?: boolean;
 }
 
 interface Item {
@@ -97,6 +99,7 @@ function OverviewSurface({
   onClosePane,
   onNewTab,
   onDismiss,
+  suspended,
 }: PaneOverviewProps) {
   const states = useAllPaneStates();
   const mru = usePaneMru();
@@ -210,7 +213,7 @@ function OverviewSurface({
 
   // キー操作。検索欄にフォーカスがあっても効くよう window の capture で拾う
   useLayoutEffect(() => {
-    if (!isPresent) return;
+    if (!isPresent || suspended) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.isComposing || e.keyCode === 229) return;
       const handled = () => {
@@ -284,7 +287,7 @@ function OverviewSurface({
       window.removeEventListener("keyup", onKeyUp, true);
       window.removeEventListener("blur", onBlur);
     };
-  }, [isPresent, mode, move, commit, closeSelected, onDismiss, items, query]);
+  }, [isPresent, suspended, mode, move, commit, closeSelected, onDismiss, items, query]);
 
   const tabCount = tabs.length;
   const compact = mode === "switch";

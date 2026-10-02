@@ -23,7 +23,10 @@ import { CommandItem } from "./types";
 import { Theme, useTheme } from "./ThemeContext";
 import { clearTerminal, focusTerminal, restartTerminal } from "./services/terminalRegistry";
 import { paneStateStore } from "./services/PaneStateStore";
-import { collectPanes, findPane, paneTitle, shortenPath, tabTitle } from "./services/paneInfo";
+import { collectPaneIds, collectPanes, findPane, paneTitle, shortenPath, tabTitle } from "./services/paneInfo";
+import { ConfirmDialog, ConfirmRequest } from "./components/ConfirmDialog";
+import { FontSizeHud } from "./components/FontSizeHud";
+import { WelcomeCard } from "./components/WelcomeCard";
 import { KEYS } from "./keymap";
 
 type Overlay =
@@ -105,7 +108,55 @@ function App() {
     });
   }, [isLoaded]);
 
-  const overlayOpen = overlay !== null || prompt !== null;
+  const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
+  const overlayOpen = overlay !== null || prompt !== null || confirm !== null;
+  const closeConfirm = useCallback(() => setConfirm(null), []);
+
+  /**
+   * 閉じる操作のガード。シェル統合で「コマンド実行中」と分かっているペインを含む場合は
+   * 確認を挟む（開発サーバーなどを Ctrl+Shift+W のうっかりで止めてしまわないように）。
+   */
+  const guardClose = useCallback(
+    (paneIds: string[], title: string, confirmLabel: string, run: () => void) => {
+      const running = paneIds
+        .map((id) => paneStateStore.getPaneState(id).runningCommand?.command)
+        .filter((c): c is string => !!c);
+      if (running.length === 0) {
+        run();
+        return;
+      }
+      setConfirm({
+        title,
+        message:
+          running.length === 1
+            ? "A command is still running. Closing will stop it."
+            : `${running.length} commands are still running. Closing will stop them.`,
+        items: running,
+        confirmLabel,
+        onConfirm: run,
+      });
+    },
+    []
+  );
+  const closePaneSafe = useCallback(
+    (paneId: string) => guardClose([paneId], "Close pane?", "Close pane", () => layout.closePane(paneId)),
+    [guardClose, layout.closePane]
+  );
+  const closeTabSafe = useCallback(
+    (tabId: string) => {
+      const tab = tabs.find((t) => t.id === tabId);
+      if (!tab) return;
+      guardClose(collectPaneIds(tab.layout), "Close tab?", "Close tab", () => layout.closeTab(tabId));
+    },
+    [tabs, guardClose, layout.closeTab]
+  );
+  const closeOtherTabsSafe = useCallback(
+    (keepId: string) => {
+      const ids = tabs.filter((t) => t.id !== keepId).flatMap((t) => collectPaneIds(t.layout));
+      guardClose(ids, "Close other tabs?", "Close tabs", () => layout.closeOtherTabs(keepId));
+    },
+    [tabs, guardClose, layout.closeOtherTabs]
+  );
 
   const closeOverlay = useCallback(() => setOverlay(null), []);
   const closePrompt = useCallback(() => setPrompt(null), []);
@@ -203,7 +254,7 @@ function App() {
     onLastPane: layout.lastPane,
     onSplitHorizontal: (shell) => splitActive("horizontal", shell),
     onSplitVertical: (shell) => splitActive("vertical", shell),
-    onClosePane: () => activePane && layout.closePane(activePane),
+    onClosePane: () => activePane && closePaneSafe(activePane),
     onToggleZoom: layout.toggleZoom,
     onFontSizeUp: () => layout.updateFontSize((s) => s + 1),
     onFontSizeDown: () => layout.updateFontSize((s) => s - 1),
@@ -214,14 +265,14 @@ function App() {
     () => ({
       focusPane: layout.focusPane,
       splitPane: (paneId, direction, options) => void layout.splitPane(paneId, direction, options),
-      closePane: layout.closePane,
+      closePane: closePaneSafe,
       toggleZoom: layout.toggleZoom,
       movePaneToNewTab: layout.movePaneToNewTab,
       openFind,
       closeFind,
       updateRatio: layout.updateRatio,
     }),
-    [layout.focusPane, layout.splitPane, layout.closePane, layout.toggleZoom, layout.movePaneToNewTab, openFind, closeFind, layout.updateRatio]
+    [layout.focusPane, layout.splitPane, closePaneSafe, layout.toggleZoom, layout.movePaneToNewTab, openFind, closeFind, layout.updateRatio]
   );
 
   const paneUi: PaneUi = useMemo(
@@ -282,8 +333,8 @@ function App() {
       { id: "rename-tab", label: "Rename Tab…", category: "Tab", action: openRenamePrompt },
       { id: "next-tab", label: "Next Tab", shortcut: KEYS.nextTab, category: "Tab", action: layout.nextTab },
       { id: "prev-tab", label: "Previous Tab", shortcut: KEYS.prevTab, category: "Tab", action: layout.prevTab },
-      { id: "close-tab", label: "Close Tab", category: "Tab", action: () => activeTabId && layout.closeTab(activeTabId) },
-      { id: "close-other-tabs", label: "Close Other Tabs", category: "Tab", action: () => activeTabId && layout.closeOtherTabs(activeTabId) },
+      { id: "close-tab", label: "Close Tab", category: "Tab", action: () => activeTabId && closeTabSafe(activeTabId) },
+      { id: "close-other-tabs", label: "Close Other Tabs", category: "Tab", action: () => activeTabId && closeOtherTabsSafe(activeTabId) },
       { id: "split-right-cmd", label: "Split Right (Command Prompt)", shortcut: KEYS.splitRightCmd, category: "Pane", action: () => splitActive("horizontal", DEFAULT_SHELL) },
       { id: "split-down-cmd", label: "Split Down (Command Prompt)", shortcut: KEYS.splitDownCmd, category: "Pane", action: () => splitActive("vertical", DEFAULT_SHELL) },
       { id: "split-right-ps", label: "Split Right (PowerShell)", shortcut: KEYS.splitRightPwsh, category: "Pane", action: () => splitActive("horizontal", PWSH_SHELL) },
@@ -295,7 +346,7 @@ function App() {
       { id: "prev-pane", label: "Previous Pane", shortcut: KEYS.prevPane, category: "Pane", action: layout.prevPane },
       { id: "first-pane", label: "First Pane", shortcut: KEYS.firstPane, category: "Pane", action: layout.firstPane },
       { id: "last-pane", label: "Last Pane", shortcut: KEYS.lastPane, category: "Pane", action: layout.lastPane },
-      { id: "close-pane", label: "Close Pane", shortcut: KEYS.closePane, category: "Pane", action: () => activePane && layout.closePane(activePane) },
+      { id: "close-pane", label: "Close Pane", shortcut: KEYS.closePane, category: "Pane", action: () => activePane && closePaneSafe(activePane) },
       { id: "find", label: "Find in Terminal", shortcut: KEYS.find, category: "Terminal", keywords: "search", action: () => activePane && openFind(activePane) },
       { id: "clear", label: "Clear Scrollback", category: "Terminal", action: () => activePane && clearTerminal(activePane) },
       { id: "restart", label: "Restart Shell", category: "Terminal", keywords: "respawn reload", action: () => activePane && restartTerminal(activePane) },
@@ -321,7 +372,7 @@ function App() {
     ],
     [
       layout, activeTab, activeTabId, activePane, activePaneNode, fontSize, showPaneHeaders, gotoCommands,
-      splitActive, openFind, openRenamePrompt, copyText, notify, changeTheme, toggleTheme, resolvedTheme,
+      splitActive, openFind, openRenamePrompt, closePaneSafe, closeTabSafe, closeOtherTabsSafe, copyText, notify, changeTheme, toggleTheme, resolvedTheme,
     ]
   );
 
@@ -338,8 +389,8 @@ function App() {
           tabs={tabs}
           activeTabId={activeTabId}
           onTabSelect={layout.setActiveTabId}
-          onTabClose={layout.closeTab}
-          onCloseOthers={layout.closeOtherTabs}
+          onTabClose={closeTabSafe}
+          onCloseOthers={closeOtherTabsSafe}
           onTabColor={layout.setTabColor}
           onTabRename={(id, name) => {
             layout.renameTab(id, name);
@@ -383,7 +434,8 @@ function App() {
         activeTabId={activeTabId}
         homeDir={homeDir}
         onSelect={handleOverviewSelect}
-        onClosePane={layout.closePane}
+        onClosePane={closePaneSafe}
+        suspended={confirm !== null}
         onNewTab={() => {
           setOverlay(null);
           layout.addTab();
@@ -413,6 +465,9 @@ function App() {
         currentDirectory={states[activePane]?.cwd ?? activePaneNode?.cwd}
       />
       <Prompt request={prompt} onClose={closePrompt} />
+      <ConfirmDialog request={confirm} onClose={closeConfirm} />
+      <FontSizeHud fontSize={fontSize} enabled={isLoaded} />
+      <WelcomeCard ready={isLoaded} onShowShortcuts={() => setOverlay({ kind: "help" })} />
       <NotificationOverlay toasts={toasts} onDismiss={dismissToast} />
     </div>
   );

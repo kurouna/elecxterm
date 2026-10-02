@@ -104,12 +104,15 @@ export function Overlay({
   children,
   align = "top",
   label,
+  zIndex = 1000,
 }: {
   open: boolean;
   onClose: () => void;
   children: ReactNode;
   align?: "top" | "center";
   label: string;
+  /** 他のオーバーレイ（概要表示など）の上に重ねたいときに上げる */
+  zIndex?: number;
 }) {
   return (
     <AnimatePresence>
@@ -118,7 +121,8 @@ export function Overlay({
           role="dialog"
           aria-modal="true"
           aria-label={label}
-          className={`fixed inset-0 z-[1000] flex justify-center px-4 ${
+          style={{ zIndex }}
+          className={`fixed inset-0 flex justify-center px-4 ${
             align === "top" ? "items-start pt-[10vh]" : "items-center"
           }`}
         >
