@@ -28,6 +28,7 @@ import { ConfirmDialog, ConfirmRequest } from "./components/ConfirmDialog";
 import { FontSizeHud } from "./components/FontSizeHud";
 import { WelcomeCard } from "./components/WelcomeCard";
 import { KEYS } from "./keymap";
+import { flyFrom, paneElement, powerOff, powerOn, suppressTabFlash, tabContentElement } from "./services/crt";
 
 type Overlay =
   | { kind: "palette" }
@@ -136,17 +137,94 @@ function App() {
     },
     []
   );
+  /**
+   * 閉じる演出: 見えているペイン・タブは CRT の電源オフを再生してから取り除く。
+   * 再生中に同じものをもう一度閉じようとしても二重には閉じない。
+   */
+  const closingRef = useRef(new Set<string>());
+  const activeTabIdRef = useRef(activeTabId);
+  activeTabIdRef.current = activeTabId;
+  /** 閉じる演出を再生中のタブ。タブバーはこれを見て、上端のラインを先に消し始める */
+  const [closingTabIds, setClosingTabIds] = useState<ReadonlySet<string>>(new Set());
+  const markTabClosing = useCallback((tabId: string, closing: boolean) => {
+    setClosingTabIds((prev) => {
+      const next = new Set(prev);
+      if (closing) next.add(tabId);
+      else next.delete(tabId);
+      return next;
+    });
+  }, []);
+
+  const closePaneAnimated = useCallback(
+    async (paneId: string, animate = true) => {
+      if (closingRef.current.has(paneId)) return;
+      closingRef.current.add(paneId);
+      const tab = tabs.find((t) => findPane(t.layout, paneId));
+      // タブ最後のペインならタブごと閉じる。そのタブのラインも同時に消し始める
+      const closesTab = tab !== undefined && collectPaneIds(tab.layout).length === 1;
+      if (closesTab) markTabClosing(tab.id, true);
+      try {
+        if (animate && tab?.id === activeTabIdRef.current) await powerOff(paneElement(paneId));
+        layout.closePane(paneId);
+      } finally {
+        closingRef.current.delete(paneId);
+        if (closesTab) markTabClosing(tab.id, false);
+      }
+    },
+    [tabs, layout.closePane, markTabClosing]
+  );
+  const closeTabAnimated = useCallback(
+    async (tabId: string) => {
+      if (closingRef.current.has(tabId)) return;
+      closingRef.current.add(tabId);
+      markTabClosing(tabId, true);
+      try {
+        if (tabId === activeTabIdRef.current) await powerOff(tabContentElement(tabId), 320);
+        layout.closeTab(tabId);
+      } finally {
+        closingRef.current.delete(tabId);
+        markTabClosing(tabId, false);
+      }
+    },
+    [layout.closeTab, markTabClosing]
+  );
+
+  /** ペインを新しいタブへ移す: 元の場所で電源オフし、新しいタブで電源オンする */
+  const movePaneToNewTabAnimated = useCallback(
+    async (paneId: string) => {
+      const tab = tabs.find((t) => findPane(t.layout, paneId));
+      // 1 枚だけのタブからは移せない（useLayout が通知する）ので演出せずにそのまま渡す
+      if (!tab || collectPaneIds(tab.layout).length < 2) {
+        layout.movePaneToNewTab(paneId);
+        return;
+      }
+      if (closingRef.current.has(paneId)) return;
+      closingRef.current.add(paneId);
+      try {
+        if (tab.id === activeTabIdRef.current) await powerOff(paneElement(paneId), 280);
+        // 新しいタブへの切り替えは明滅ではなく、ペインの電源オンで見せる
+        suppressTabFlash();
+        layout.movePaneToNewTab(paneId);
+        requestAnimationFrame(() => powerOn(paneElement(paneId), 420));
+      } finally {
+        closingRef.current.delete(paneId);
+      }
+    },
+    [tabs, layout.movePaneToNewTab]
+  );
+
   const closePaneSafe = useCallback(
-    (paneId: string) => guardClose([paneId], "Close pane?", "Close pane", () => layout.closePane(paneId)),
-    [guardClose, layout.closePane]
+    (paneId: string, animate = true) =>
+      guardClose([paneId], "Close pane?", "Close pane", () => void closePaneAnimated(paneId, animate)),
+    [guardClose, closePaneAnimated]
   );
   const closeTabSafe = useCallback(
     (tabId: string) => {
       const tab = tabs.find((t) => t.id === tabId);
       if (!tab) return;
-      guardClose(collectPaneIds(tab.layout), "Close tab?", "Close tab", () => layout.closeTab(tabId));
+      guardClose(collectPaneIds(tab.layout), "Close tab?", "Close tab", () => void closeTabAnimated(tabId));
     },
-    [tabs, guardClose, layout.closeTab]
+    [tabs, guardClose, closeTabAnimated]
   );
   const closeOtherTabsSafe = useCallback(
     (keepId: string) => {
@@ -225,10 +303,28 @@ function App() {
     [layout.totalPanes]
   );
 
+  /**
+   * ズームの切り替え。ペインは最終の大きさで一度だけ配置し、元の位置から飛ばす（FLIP）。
+   * ペイン見出しのボタンは自分の ID を渡す（フォーカス移動の反映を待たずに正しいペインを動かすため）。
+   */
+  const toggleZoomAnimated = useCallback(
+    (paneId?: string) => {
+      const target = paneId ?? activePane;
+      const from = paneElement(target)?.getBoundingClientRect();
+      layout.toggleZoom();
+      requestAnimationFrame(() => flyFrom(paneElement(target), from));
+    },
+    [activePane, layout.toggleZoom]
+  );
+
   const handleOverviewSelect = useCallback(
     (paneId: string) => {
       setOverlay(null);
+      // 別のタブへ移るときも、明滅ではなくペインの電源オンだけを見せる
+      suppressTabFlash();
       layout.focusPane(paneId);
+      // 選んだペインに「チャンネルが合う」電源オン演出
+      requestAnimationFrame(() => powerOn(paneElement(paneId), 380));
     },
     [layout.focusPane]
   );
@@ -253,7 +349,7 @@ function App() {
     onSplitHorizontal: (shell) => splitActive("horizontal", shell),
     onSplitVertical: (shell) => splitActive("vertical", shell),
     onClosePane: () => activePane && closePaneSafe(activePane),
-    onToggleZoom: layout.toggleZoom,
+    onToggleZoom: () => toggleZoomAnimated(),
     onFontSizeUp: () => layout.updateFontSize((s) => s + 1),
     onFontSizeDown: () => layout.updateFontSize((s) => s - 1),
     onFontSizeReset: () => layout.updateFontSize(DEFAULT_FONT_SIZE),
@@ -264,13 +360,13 @@ function App() {
       focusPane: layout.focusPane,
       splitPane: (paneId, direction, options) => void layout.splitPane(paneId, direction, options),
       closePane: closePaneSafe,
-      toggleZoom: layout.toggleZoom,
-      movePaneToNewTab: layout.movePaneToNewTab,
+      toggleZoom: toggleZoomAnimated,
+      movePaneToNewTab: (paneId) => void movePaneToNewTabAnimated(paneId),
       openFind,
       closeFind,
       updateRatio: layout.updateRatio,
     }),
-    [layout.focusPane, layout.splitPane, closePaneSafe, layout.toggleZoom, layout.movePaneToNewTab, openFind, closeFind, layout.updateRatio]
+    [layout.focusPane, layout.splitPane, closePaneSafe, toggleZoomAnimated, movePaneToNewTabAnimated, openFind, closeFind, layout.updateRatio]
   );
 
   const paneUi: PaneUi = useMemo(
@@ -337,9 +433,9 @@ function App() {
       { id: "split-down-cmd", label: "Split Down (Command Prompt)", shortcut: KEYS.splitDownCmd, category: "Pane", action: () => splitActive("vertical", DEFAULT_SHELL) },
       { id: "split-right-ps", label: "Split Right (PowerShell)", shortcut: KEYS.splitRightPwsh, category: "Pane", action: () => splitActive("horizontal", PWSH_SHELL) },
       { id: "split-down-ps", label: "Split Down (PowerShell)", shortcut: KEYS.splitDownPwsh, category: "Pane", action: () => splitActive("vertical", PWSH_SHELL) },
-      { id: "zoom", label: activeTab?.zoomed ? "Restore Pane Layout" : "Zoom Pane", shortcut: KEYS.zoom, category: "Pane", keywords: "maximize", action: layout.toggleZoom },
+      { id: "zoom", label: activeTab?.zoomed ? "Restore Pane Layout" : "Zoom Pane", shortcut: KEYS.zoom, category: "Pane", keywords: "maximize", action: () => toggleZoomAnimated() },
       { id: "equalize", label: "Equalize Pane Sizes", category: "Pane", keywords: "balance even", action: layout.equalizePanes },
-      { id: "move-to-tab", label: "Move Pane to New Tab", category: "Pane", keywords: "break detach", action: () => activePane && layout.movePaneToNewTab(activePane) },
+      { id: "move-to-tab", label: "Move Pane to New Tab", category: "Pane", keywords: "break detach", action: () => activePane && void movePaneToNewTabAnimated(activePane) },
       { id: "next-pane", label: "Next Pane", shortcut: KEYS.nextPane, category: "Pane", action: layout.nextPane },
       { id: "prev-pane", label: "Previous Pane", shortcut: KEYS.prevPane, category: "Pane", action: layout.prevPane },
       { id: "first-pane", label: "First Pane", shortcut: KEYS.firstPane, category: "Pane", action: layout.firstPane },
@@ -370,7 +466,7 @@ function App() {
     ],
     [
       layout, activeTab, activeTabId, activePane, activePaneNode, fontSize, showPaneHeaders, gotoCommands,
-      splitActive, openFind, openRenamePrompt, closePaneSafe, closeTabSafe, closeOtherTabsSafe, copyText, notify, changeTheme, toggleTheme, resolvedTheme,
+      splitActive, openFind, openRenamePrompt, toggleZoomAnimated, movePaneToNewTabAnimated, closePaneSafe, closeTabSafe, closeOtherTabsSafe, copyText, notify, changeTheme, toggleTheme, resolvedTheme,
     ]
   );
 
@@ -386,6 +482,7 @@ function App() {
         <TabBar
           tabs={tabs}
           activeTabId={activeTabId}
+          closingTabIds={closingTabIds}
           onTabSelect={layout.setActiveTabId}
           onTabClose={closeTabSafe}
           onCloseOthers={closeOtherTabsSafe}
@@ -420,7 +517,7 @@ function App() {
         homeDir={homeDir}
         onShowHelp={() => setOverlay({ kind: "help" })}
         onShowOverview={() => setOverlay({ kind: "overview", mode: "browse", direction: 1 })}
-        onToggleZoom={layout.toggleZoom}
+        onToggleZoom={() => toggleZoomAnimated()}
         onCopyPath={copyText}
       />
 
@@ -432,7 +529,7 @@ function App() {
         activeTabId={activeTabId}
         homeDir={homeDir}
         onSelect={handleOverviewSelect}
-        onClosePane={closePaneSafe}
+        onClosePane={(paneId) => closePaneSafe(paneId, false)}
         suspended={confirm !== null}
         onNewTab={() => {
           setOverlay(null);

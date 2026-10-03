@@ -13,6 +13,8 @@ type MockHooks = {
 declare global {
   interface Window {
     __ELECXTERM_MOCK__: MockHooks;
+    /** 開発ビルドで terminalRegistry が公開する（画面の文字の読み取り用） */
+    __ELECXTERM_REGISTRY__: { getTerminalSnapshot: (paneId: string, maxLines: number) => string[] };
   }
 }
 
@@ -63,10 +65,7 @@ export async function expectFocusedPane(page: Page, paneId: string | undefined) 
 
 /** ペインの端末に表示されている末尾のテキスト */
 export function screenText(page: Page, paneId: string): Promise<string> {
-  return page.evaluate(async (id) => {
-    const registry = await import("/src/services/terminalRegistry.ts");
-    return registry.getTerminalSnapshot(id, 200).join("\n");
-  }, paneId);
+  return page.evaluate((id) => window.__ELECXTERM_REGISTRY__.getTerminalSnapshot(id, 200).join("\n"), paneId);
 }
 
 /** シェルのプロンプトが出るまで待つ（疑似シェルの起動完了） */

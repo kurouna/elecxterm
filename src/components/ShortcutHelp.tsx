@@ -24,8 +24,8 @@ export function ShortcutHelp({ open, onClose }: ShortcutHelpProps) {
   }, [open, onClose]);
 
   return (
-    <Overlay open={open} onClose={onClose} align="center" label="Keyboard shortcuts">
-      <div className={`${PANEL_CLASS} max-w-[860px]`}>
+    <Overlay open={open} onClose={onClose} align="center" label="Keyboard shortcuts" width={860}>
+      <div className={PANEL_CLASS}>
         <div className="flex items-center gap-2 border-b border-border-dim px-5 py-3">
           <Keyboard size={16} className="text-accent" />
           <span className="text-[14px] font-semibold text-tx-primary">Keyboard shortcuts</span>

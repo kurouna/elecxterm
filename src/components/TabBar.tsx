@@ -8,7 +8,7 @@ import { useAllPaneStates } from "../hooks/usePaneState";
 import { collectPaneIds, tabTitle } from "../services/paneInfo";
 import { PaneVolatileState } from "../services/PaneStateStore";
 import { KEYS } from "../keymap";
-import { IconButton, Kbd } from "./ui";
+import { CRT_EXIT, IconButton, Kbd, LINE_OFF, LINE_ON, TAB_EXIT } from "./ui";
 
 interface TabBarProps {
   tabs: Tab[];
@@ -20,6 +20,8 @@ interface TabBarProps {
   onTabRename: (id: string, newName: string) => void;
   onTabReorder: (tabs: Tab[]) => void;
   onTabAdd: (shell?: string) => void;
+  /** 閉じる演出中のタブ（上端のラインを先に消す） */
+  closingTabIds: ReadonlySet<string>;
 }
 
 interface MenuState {
@@ -48,6 +50,7 @@ function summarize(tab: Tab, states: Record<string, PaneVolatileState>) {
 export function TabBar({
   tabs,
   activeTabId,
+  closingTabIds,
   onTabSelect,
   onTabClose,
   onCloseOthers,
@@ -70,6 +73,15 @@ export function TabBar({
    * （選択・名前変更）はそのまま使える。
    */
   const windowDragRef = useRef<{ x: number; y: number } | null>(null);
+  /**
+   * 描画済みのタブ。初めて描くタブ（新しく開いた・起動直後）は、チップ自体の電源オン
+   * （横線から開く）が終わる頃にラインを伸ばし始める。同時に始めると、開ききる前の
+   * 細いチップに隠れてラインの演出が見えないため。
+   */
+  const seenTabsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    seenTabsRef.current = new Set(tabs.map((t) => t.id));
+  }, [tabs]);
   const singleTab = tabs.length === 1;
 
   const startRename = (tab: Tab, states: Record<string, PaneVolatileState>) => {
@@ -96,9 +108,9 @@ export function TabBar({
   useLayoutEffect(() => {
     const el = menuRef.current;
     if (!el || !menu) return;
-    const rect = el.getBoundingClientRect();
-    const x = Math.min(menu.x, window.innerWidth - rect.width - 8);
-    const y = Math.min(menu.y, window.innerHeight - rect.height - 8);
+    // transform（電源オン中の縮小）を含まないレイアウト上の大きさで測る
+    const x = Math.min(menu.x, window.innerWidth - el.offsetWidth - 8);
+    const y = Math.min(menu.y, window.innerHeight - el.offsetHeight - 8);
     if (x !== menu.x || y !== menu.y) setMenu({ ...menu, x: Math.max(8, x), y: Math.max(8, y) });
   }, [menu]);
 
@@ -142,6 +154,7 @@ export function TabBar({
             const isRenaming = renameId === tab.id;
             const info = summarize(tab, states);
             const title = tabTitle(tab, states);
+            const isNewTab = !seenTabsRef.current.has(tab.id);
 
             return (
               <Reorder.Item
@@ -154,10 +167,11 @@ export function TabBar({
                 tabIndex={isActive ? 0 : -1}
                 layout="position"
                 dragListener={!isRenaming && !singleTab}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.94, transition: { duration: 0.12 } }}
+                // 開いたタブは電源オン（CSS）、閉じたタブは横線に潰れる。並べ替えは framer のレイアウト
+                initial={false}
+                exit={TAB_EXIT}
                 transition={{ type: "spring", damping: 32, stiffness: 520 }}
+                style={{ "--crt-duration": "380ms" } as React.CSSProperties}
                 whileDrag={{ zIndex: 50, cursor: "grabbing" }}
                 onPointerDown={(e: React.PointerEvent) => {
                   if (e.button !== 0 || isRenaming) return;
@@ -187,27 +201,29 @@ export function TabBar({
                   setMenu({ x: e.clientX, y: e.clientY, tabId: tab.id, kind: "tab" });
                 }}
                 title={`${title}${info.count > 1 ? ` · ${info.count} panes` : ""}${index < 9 ? ` · Ctrl+Alt+${index + 1}` : ""}`}
-                className={`titlebar-no-drag group @container relative flex h-[32px] w-[200px] min-w-[84px] shrink select-none items-center gap-2 rounded-t-lg px-3 text-[12px] outline-none ${
+                className={`titlebar-no-drag group crt-on @container relative flex h-[32px] w-[200px] min-w-[84px] shrink select-none items-center gap-2 rounded-t-lg px-3 text-[12px] outline-none ${
                   isActive
                     ? "bg-tab-active text-tx-primary"
                     : "text-tx-muted hover:bg-tx-primary/[0.05] hover:text-tx-secondary"
                 }`}
               >
-                {isActive ? (
-                  <motion.span
-                    layoutId="active-tab-indicator"
-                    className="absolute inset-x-3 top-0 h-[2px] rounded-b-full"
-                    style={{ background: tab.color ? tabAccent(tab, index) : "var(--accent)" }}
-                    transition={{ type: "spring", damping: 34, stiffness: 520 }}
-                  />
-                ) : (
-                  tab.color && (
-                    <span
-                      className="absolute inset-x-3 top-0 h-[2px] rounded-b-full opacity-60"
-                      style={{ background: tabAccent(tab, index) }}
+                {/* 上端のライン（アクティブなタブ、または色付きのタブ）。アクティブが移るとき・
+                    タブを閉じるときは中央の点に縮んで消え、新しくアクティブになったタブでは中央から伸びる。
+                    新しく開いたタブ（チップのマウント時）も中央から伸ばす。
+                    propagate でチップ自体が閉じるときもラインの消える演出を再生する */}
+                <AnimatePresence propagate>
+                  {(isActive || tab.color) && !closingTabIds.has(tab.id) && (
+                    <motion.span
+                      key={isActive ? "active" : "color"}
+                      className="pointer-events-none absolute inset-x-3 top-0 h-[2px] rounded-b-full"
+                      style={{ background: tab.color ? tabAccent(tab, index) : "var(--accent)" }}
+                      initial={LINE_ON.initial}
+                      animate={{ ...LINE_ON.animate, opacity: isActive ? 1 : 0.6 }}
+                      exit={LINE_OFF}
+                      transition={isNewTab ? { ...LINE_ON.transition, delay: 0.2 } : LINE_ON.transition}
                     />
-                  )
-                )}
+                  )}
+                </AnimatePresence>
 
                 {/* 状態アイコン: ベル > 未読出力 > 通常 */}
                 {info.bell && !isActive ? (
@@ -315,12 +331,10 @@ export function TabBar({
             <motion.div
               ref={menuRef}
               role="menu"
-              initial={{ opacity: 0, scale: 0.97, y: -3 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.97, y: -3, transition: { duration: 0.08 } }}
-              transition={{ duration: 0.1 }}
-              style={{ top: menu.y, left: menu.x }}
-              className="titlebar-no-drag fixed z-[901] w-56 overflow-hidden rounded-lg border border-border-strong bg-bg-glass p-1 shadow-[var(--shadow-lg)] backdrop-blur-2xl"
+              initial={false}
+              exit={CRT_EXIT}
+              style={{ top: menu.y, left: menu.x, "--crt-duration": "260ms" } as React.CSSProperties}
+              className="crt-on titlebar-no-drag fixed z-[901] w-56 overflow-hidden rounded-lg border border-border-strong bg-bg-glass p-1 shadow-[var(--shadow-lg)] backdrop-blur-2xl"
             >
               {menu.kind === "new" ? (
                 <>

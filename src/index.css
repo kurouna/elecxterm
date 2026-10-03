@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* components レイヤーに入れる: レイヤー外だと crt-on の position: relative が fixed / absolute などのユーティリティを上書きしてしまう */
+@import "./styles/crt.css" layer(components);
 
 /*
   elecxterm theme system
@@ -296,12 +298,6 @@ textarea {
   -webkit-app-region: no-drag;
 }
 
-/* テーマ切り替えの円形リビール（themeTransition.ts）。既定のクロスフェードは使わない */
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation: none;
-  mix-blend-mode: normal;
-}
 
 /* ウィンドウが非アクティブの間はタイトルバーを沈める（ネイティブアプリと同じ作法） */
 .titlebar .titlebar-dimmable {

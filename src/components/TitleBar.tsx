@@ -50,7 +50,7 @@ export function TitleBar({ children, resolvedTheme, onToggleTheme, onOverview, o
     <div
       data-tauri-drag-region
       data-window-inactive={windowFocused ? undefined : ""}
-      className="titlebar titlebar-drag flex h-10 w-full shrink-0 select-none items-stretch bg-bg-chrome"
+      className="titlebar chrome-boot titlebar-drag flex h-10 w-full shrink-0 select-none items-stretch bg-bg-chrome"
     >
       <div data-tauri-drag-region className="titlebar-dimmable flex shrink-0 items-center pl-3 pr-2">
         <img src="/app-icon.svg" alt="" className="pointer-events-none h-[18px] w-[18px]" />

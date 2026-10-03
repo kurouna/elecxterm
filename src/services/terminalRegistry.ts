@@ -6,6 +6,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ptyBridge } from "../pty-bridge";
 import { paneStateStore } from "./PaneStateStore";
+import { paneElement, powerOn } from "./crt";
 import type { CursorStyle } from "../types";
 
 /**
@@ -48,6 +49,10 @@ export interface TerminalEntry {
    * 起こす」のを避けるべく、こちらで実際の適用値を覚えておく。
    */
   appearance: TerminalAppearance;
+  /** 生成した時刻。マウント時に「新しく開いた端末か」を判断して電源オン演出を出すのに使う */
+  createdAt: number;
+  /** まとめて生成された（起動時の復元など）ときに、順番に電源が入るよう遅らせる時間 */
+  powerOnDelay: number;
 }
 
 interface InternalEntry extends TerminalEntry {
@@ -72,6 +77,12 @@ interface InternalEntry extends TerminalEntry {
 }
 
 const entries = new Map<string, InternalEntry>();
+
+/** 立て続けに生成された端末を 1 つの「まとまり」とみなす間隔と、順番に点灯させる刻み */
+const BURST_WINDOW_MS = 400;
+const POWER_ON_STAGGER_MS = 70;
+let lastCreatedAt = 0;
+let burstIndex = 0;
 
 /**
  * ペインの Terminal をホスト要素に貼り付ける。無ければ生成して PTY を起動する。
@@ -188,8 +199,14 @@ function createEntry(host: HTMLElement, options: TerminalAttachOptions): Interna
     // ホストがまだレイアウトされていなければ既定サイズのまま起動し、後の fit で合わせる
   }
 
+  const createdAt = Date.now();
+  burstIndex = createdAt - lastCreatedAt < BURST_WINDOW_MS ? burstIndex + 1 : 0;
+  lastCreatedAt = createdAt;
+
   const entry: InternalEntry = {
     paneId,
+    createdAt,
+    powerOnDelay: Math.min(burstIndex, 8) * POWER_ON_STAGGER_MS,
     ptyId: paneId,
     generation: 0,
     rootEl,
@@ -464,6 +481,8 @@ export function restartTerminal(paneId: string) {
   entry.generation += 1;
   entry.cwd = paneStateStore.getPaneState(paneId).cwd ?? entry.cwd;
   entry.terminal.write("\x1b[2J\x1b[3J\x1b[H");
+  // 再起動は電源の入れ直し
+  powerOn(paneElement(paneId), 480);
   startPty(entry);
 }
 
@@ -537,4 +556,10 @@ export function destroyOrphanTerminals(livePaneIds: Iterable<string>) {
   for (const paneId of [...entries.keys()]) {
     if (!live.has(paneId)) destroyTerminal(paneId);
   }
+}
+
+// 開発時のみ: e2e テストが「アプリが実際に使っている」レジストリから画面の文字を読めるようにする
+// （テスト側で動的 import すると、HMR 後は別のモジュールインスタンスを読んでしまうため）
+if (import.meta.env.DEV) {
+  (window as unknown as { __ELECXTERM_REGISTRY__: unknown }).__ELECXTERM_REGISTRY__ = { getTerminalSnapshot };
 }

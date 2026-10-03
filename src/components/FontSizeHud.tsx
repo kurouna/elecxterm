@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { CRT_EXIT } from "./ui";
 
 interface FontSizeHudProps {
   fontSize: number;
@@ -27,23 +28,22 @@ export function FontSizeHud({ fontSize, enabled }: FontSizeHudProps) {
   }, [fontSize, enabled]);
 
   return (
-    <AnimatePresence>
-      {visible && (
-        <motion.div
-          key="hud"
-          initial={{ opacity: 0, scale: 0.92 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.96 }}
-          transition={{ duration: 0.12 }}
-          className="pointer-events-none fixed left-1/2 top-1/2 z-[1100] flex -translate-x-1/2 -translate-y-1/2 items-baseline gap-2 rounded-2xl border border-border-strong bg-bg-glass px-6 py-4 shadow-[var(--shadow-lg)] backdrop-blur-2xl"
-          role="status"
-          aria-live="polite"
-        >
-          <span className="font-mono text-[13px] text-tx-muted">Aa</span>
-          <span className="font-mono text-[28px] font-semibold tabular-nums text-tx-primary">{fontSize}</span>
-          <span className="text-[13px] text-tx-muted">px</span>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <div className="pointer-events-none fixed inset-0 z-[1100] flex items-center justify-center" role="status" aria-live="polite">
+      <AnimatePresence>
+        {visible && (
+          <motion.div
+            key="hud"
+            initial={false}
+            exit={CRT_EXIT}
+            style={{ "--crt-duration": "280ms" } as React.CSSProperties}
+            className="crt-on flex items-baseline gap-2 rounded-2xl border border-border-strong bg-bg-glass px-6 py-4 shadow-[var(--shadow-lg)] backdrop-blur-2xl"
+          >
+            <span className="font-mono text-[13px] text-tx-muted">Aa</span>
+            <span className="font-mono text-[28px] font-semibold tabular-nums text-tx-primary">{fontSize}</span>
+            <span className="text-[13px] text-tx-muted">px</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }

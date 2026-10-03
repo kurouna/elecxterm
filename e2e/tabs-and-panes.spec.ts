@@ -144,6 +144,30 @@ test.describe("panes", () => {
     await expect.poll(() => screenText(page, first)).toContain("still-alive");
   });
 
+  test("Move Pane to New Tab moves the pane with its shell and shows it in the new tab", async ({ page }) => {
+    await page.keyboard.press("Control+Shift+D");
+    await expect(visiblePanes(page)).toHaveCount(2);
+    const [first, moved] = await paneIds(page);
+    await expectFocusedPane(page, moved);
+
+    await page.keyboard.press("Control+Shift+K");
+    await page.keyboard.type("Move Pane to New Tab");
+    await page.keyboard.press("Enter");
+
+    await expect(tabs(page)).toHaveCount(2);
+    await expect(tabs(page).nth(1)).toHaveAttribute("aria-selected", "true");
+    expect(await paneIds(page)).toEqual([moved]);
+    await expectFocusedPane(page, moved);
+    // 電源オフ・オンの演出が終わった後、ペインは見えたまま（クラスが残って消えたままにならない）
+    const pane = page.locator(`[data-pane-id="${moved}"]`);
+    await expect(pane).not.toHaveClass(/crt-off/);
+    await expect.poll(() => pane.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
+    // シェルは作り直さずに引き継ぐ
+    expect((await ptyLog(page)).filter((e) => e.cmd === "create_pty" && e.id === moved)).toHaveLength(1);
+    expect(await allPaneIds(page)).toEqual(expect.arrayContaining([first, moved]));
+    await expectNoLeakedShells(page);
+  });
+
   test("closing a pane in the middle moves focus to its neighbour", async ({ page }) => {
     await page.keyboard.press("Control+Shift+D");
     await page.keyboard.press("Control+Shift+D");
@@ -224,6 +248,89 @@ test.describe("panes", () => {
     await page.reload();
     await expect(tabs(page)).toHaveCount(2);
     await expect.poll(async () => [...(await allPaneIds(page))].sort()).toEqual([...before].sort());
+    await expectNoLeakedShells(page);
+  });
+});
+
+test.describe("overview", () => {
+  test("Enter jumps to the selected pane in another tab and closes the overview", async ({ page }) => {
+    await page.keyboard.press("Control+Shift+D");
+    await page.keyboard.press("Control+Shift+T");
+    await expect(tabs(page)).toHaveCount(2);
+    const firstTabPanes = await allPaneIds(page).then((ids) => ids.slice(0, 2));
+
+    await page.keyboard.press("Control+Shift+O");
+    const overview = page.getByRole("dialog", { name: "Pane overview" });
+    await expect(overview).toBeVisible();
+    await expect(page.locator("[data-overview-pane]")).toHaveCount(3);
+
+    // 1 番目のカード（最初のタブの 1 枚目）を選んで開く
+    await page.keyboard.press("Home");
+    await page.keyboard.press("Enter");
+    await expect(overview).toBeHidden();
+    await expect(tabs(page).nth(0)).toHaveAttribute("aria-selected", "true");
+    await expectFocusedPane(page, firstTabPanes[0]);
+  });
+
+  test("Ctrl+Tab switches back to the previous pane", async ({ page }) => {
+    const [first] = await paneIds(page);
+    await page.keyboard.press("Control+Shift+D");
+    const [, second] = await paneIds(page);
+    await expectFocusedPane(page, second);
+
+    await page.keyboard.press("Control+Tab");
+    await expect(page.getByRole("dialog", { name: "Pane overview" })).toBeHidden();
+    await expectFocusedPane(page, first);
+  });
+});
+
+test.describe("dialogs", () => {
+  for (const [name, keys] of [
+    ["Command palette", "Control+Shift+K"],
+    ["Settings", "Control+Shift+Period"],
+    ["Keyboard shortcuts", "Control+Shift+Slash"],
+  ] as const) {
+    test(`${name} opens with ${keys}, closes with Esc and gives focus back to the terminal`, async ({ page }) => {
+      const [pane] = await paneIds(page);
+      await page.keyboard.press(keys);
+      const dialog = page.getByRole("dialog", { name });
+      await expect(dialog).toBeVisible();
+      // 演出はパネルの範囲だけに掛かる（ウィンドウ幅いっぱいの要素には掛けない）
+      const effectBox = await dialog.locator(".crt-on").first().boundingBox();
+      expect(effectBox!.width).toBeLessThan(900);
+
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expectFocusedPane(page, pane);
+    });
+  }
+
+  test("the tab context menu floats at the pointer", async ({ page }) => {
+    const box = (await tabs(page).first().boundingBox())!;
+    await tabs(page).first().click({ button: "right" });
+    const menu = page.getByRole("menu");
+    await expect(menu).toBeVisible();
+    // 演出用のクラス（crt-on）が fixed などの配置を上書きしないこと
+    expect(await menu.evaluate((el) => getComputedStyle(el).position)).toBe("fixed");
+    const menuBox = (await menu.boundingBox())!;
+    expect(menuBox.y).toBeLessThan(box.y + box.height + 40);
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+  });
+
+  test("Ctrl+Shift+Z zooms the active pane and restores the layout", async ({ page }) => {
+    await page.keyboard.press("Control+Shift+D");
+    await expect(visiblePanes(page)).toHaveCount(2);
+    const [, second] = await paneIds(page);
+
+    await page.keyboard.press("Control+Shift+Z");
+    await expect(visiblePanes(page)).toHaveCount(1);
+    expect(await paneIds(page)).toEqual([second]);
+    await expectFocusedPane(page, second);
+
+    await page.keyboard.press("Control+Shift+Z");
+    await expect(visiblePanes(page)).toHaveCount(2);
+    await expectFocusedPane(page, second);
     await expectNoLeakedShells(page);
   });
 });

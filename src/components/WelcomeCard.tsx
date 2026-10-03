@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Sparkles, X } from "lucide-react";
 import { KEYS } from "../keymap";
-import { Kbd } from "./ui";
+import { CRT_EXIT, Kbd } from "./ui";
 
 const STORAGE_KEY = "elecxterm-welcomed";
 
@@ -50,13 +50,12 @@ export function WelcomeCard({ ready, onShowShortcuts }: WelcomeCardProps) {
     <AnimatePresence>
       {open && (
         <motion.div
-          initial={{ opacity: 0, y: 16, scale: 0.97 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 12, transition: { duration: 0.15 } }}
-          transition={{ type: "spring", damping: 28, stiffness: 340 }}
+          initial={false}
+          exit={CRT_EXIT}
+          style={{ "--crt-duration": "480ms" } as React.CSSProperties}
           role="dialog"
           aria-label="Welcome to elecxterm"
-          className="fixed bottom-10 right-5 z-[950] w-[340px] overflow-hidden rounded-xl border border-border-strong bg-bg-glass shadow-[var(--shadow-lg)] backdrop-blur-2xl"
+          className="crt-on fixed bottom-10 right-5 z-[950] w-[340px] overflow-hidden rounded-xl border border-border-strong bg-bg-glass shadow-[var(--shadow-lg)] backdrop-blur-2xl"
         >
           <div className="flex items-center gap-2 px-4 pb-2 pt-3.5">
             <Sparkles size={15} className="text-accent" />

@@ -13,6 +13,7 @@ import {
   TerminalEntry,
 } from "../services/terminalRegistry";
 import { paneTitle, shortenPath } from "../services/paneInfo";
+import { powerOn } from "../services/crt";
 import { KEYS } from "../keymap";
 import { FindBar } from "./FindBar";
 import { IconButton, ShellBadge, StatusDot } from "./ui";
@@ -32,6 +33,7 @@ function TerminalPaneComponent({ pane, isActive }: TerminalPaneProps) {
   const actions = usePaneActions();
   const state = usePaneState(pane.id);
 
+  const paneRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const [entry, setEntry] = useState<TerminalEntry | null>(null);
   const entryRef = useRef<TerminalEntry | null>(null);
@@ -73,6 +75,10 @@ function TerminalPaneComponent({ pane, isActive }: TerminalPaneProps) {
     });
     entryRef.current = attached;
     setEntry(attached);
+    // 新しく開いた端末だけ電源オン演出（レイアウト変更での再マウントでは出さない）
+    if (Date.now() - attached.createdAt < 700) {
+      powerOn(paneRef.current, attached.powerOnDelay > 0 ? 650 : 520, attached.powerOnDelay);
+    }
     const raf = requestAnimationFrame(fit);
     return () => {
       cancelAnimationFrame(raf);
@@ -170,6 +176,7 @@ function TerminalPaneComponent({ pane, isActive }: TerminalPaneProps) {
 
   return (
     <div
+      ref={paneRef}
       className={`pane group/pane relative flex h-full w-full flex-col overflow-hidden rounded-lg border bg-bg-main transition-[border-color,box-shadow] duration-150 ${
         state.status === "error"
           ? "border-danger/70"
@@ -189,7 +196,7 @@ function TerminalPaneComponent({ pane, isActive }: TerminalPaneProps) {
           className={`flex h-[26px] shrink-0 items-center gap-2 border-b px-2 text-[11.5px] ${
             isActive ? "border-border-dim bg-bg-surface" : "border-transparent bg-bg-main"
           }`}
-          onDoubleClick={() => multiPane && actions.toggleZoom()}
+          onDoubleClick={() => multiPane && actions.toggleZoom(pane.id)}
         >
           <StatusDot status={state.status} activity={state.activity && !isActive} />
           <ShellBadge shell={shell} />
@@ -229,7 +236,7 @@ function TerminalPaneComponent({ pane, isActive }: TerminalPaneProps) {
                   active={zoomed}
                   onClick={() => {
                     actions.focusPane(pane.id);
-                    actions.toggleZoom();
+                    actions.toggleZoom(pane.id);
                   }}
                 >
                   {zoomed ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
@@ -287,7 +294,8 @@ function TerminalPaneComponent({ pane, isActive }: TerminalPaneProps) {
 
         {ended && (
           <div
-            className="absolute bottom-3 right-3 z-20 flex items-center gap-2 rounded-lg border border-border-strong bg-bg-glass px-2.5 py-1.5 text-[12px] shadow-[var(--shadow-lg)] backdrop-blur-xl"
+            style={{ "--crt-duration": "380ms" } as React.CSSProperties}
+            className="crt-on absolute bottom-3 right-3 z-20 flex items-center gap-2 rounded-lg border border-border-strong bg-bg-glass px-2.5 py-1.5 text-[12px] shadow-[var(--shadow-lg)] backdrop-blur-xl"
             onPointerDown={(e) => e.stopPropagation()}
           >
             <span className={state.status === "error" ? "text-danger" : "text-tx-secondary"}>

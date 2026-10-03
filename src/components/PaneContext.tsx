@@ -12,7 +12,8 @@ export interface PaneActions {
   focusPane: (paneId: string) => void;
   splitPane: (paneId: string, direction: SplitDirection, options?: { shell?: string }) => void;
   closePane: (paneId: string) => void;
-  toggleZoom: () => void;
+  /** ペインの ID を渡すとそのペインを（渡さなければアクティブペインを）ズームする */
+  toggleZoom: (paneId?: string) => void;
   movePaneToNewTab: (paneId: string) => void;
   openFind: (paneId: string) => void;
   closeFind: () => void;

@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { AlertCircle, CheckCircle2, Info, X } from "lucide-react";
 import { useEffect } from "react";
+import { CRT_EXIT } from "./ui";
 
 export type ToastType = "info" | "success" | "warning" | "error";
 
@@ -56,10 +57,11 @@ function ToastView({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 16, scale: 0.96 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.15 } }}
-      className="pointer-events-auto flex min-w-[280px] max-w-[min(560px,90vw)] items-center gap-3 rounded-xl border border-border-strong bg-bg-glass px-4 py-2.5 shadow-[var(--shadow-lg)] backdrop-blur-2xl"
+      // 出るときは CRT の電源オン、消えるときは横線に潰れる
+      initial={false}
+      exit={CRT_EXIT}
+      style={{ "--crt-duration": "420ms" } as React.CSSProperties}
+      className="crt-on pointer-events-auto flex min-w-[280px] max-w-[min(560px,90vw)] items-center gap-3 rounded-xl border border-border-strong bg-bg-glass px-4 py-2.5 shadow-[var(--shadow-lg)] backdrop-blur-2xl"
     >
       {ICON[toast.type]}
       <div className="min-w-0 flex-1">

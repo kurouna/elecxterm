@@ -104,6 +104,7 @@ export function Overlay({
   children,
   align = "top",
   label,
+  width,
   zIndex = 1000,
 }: {
   open: boolean;
@@ -111,6 +112,11 @@ export function Overlay({
   children: ReactNode;
   align?: "top" | "center";
   label: string;
+  /**
+   * パネルの最大幅（px）。演出（電源オン・オフ）はこの幅の中だけに掛かる。
+   * 幅を決めずに画面幅いっぱいの要素へ掛けると、走査線やビームがウィンドウ全体に出てしまう。
+   */
+  width: number;
   /** 他のオーバーレイ（概要表示など）の上に重ねたいときに上げる */
   zIndex?: number;
 }) {
@@ -136,18 +142,53 @@ export function Overlay({
           />
           <motion.div
             className="relative w-full"
-            initial={{ opacity: 0, scale: 0.98, y: -6 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.98, y: -4 }}
-            transition={{ type: "spring", damping: 30, stiffness: 420 }}
+            style={{ maxWidth: width }}
+            initial={false}
+            exit={CRT_EXIT}
           >
-            {children}
+            {/* 開くときは CRT の電源オン（styles/crt.css）、閉じるときは横線に潰れて消える。
+                どちらもパネルの大きさの要素に掛け、画面全体には広げない */}
+            <div className="crt-on rounded-xl" style={{ "--crt-duration": "420ms" } as React.CSSProperties}>
+              {children}
+            </div>
           </motion.div>
         </div>
       )}
     </AnimatePresence>
   );
 }
+
+/**
+ * CRT の電源オフを framer-motion の exit で表したもの（styles/crt.css の crt-power-off と同じ形）。
+ * AnimatePresence で外れる要素はクラスを付け替えられないので、こちらで再生する。
+ */
+export const CRT_EXIT = {
+  scaleY: [1, 0.006, 0.006],
+  scaleX: [1, 1, 0],
+  opacity: [1, 1, 0],
+  filter: ["brightness(1)", "brightness(3.5)", "brightness(6)"],
+  transition: { duration: 0.26, times: [0, 0.55, 1], ease: "easeIn" as const },
+};
+
+/**
+ * タブ上端のラインの電源オン／オフ（ラインそのものが CRT の走査線のように振る舞う）。
+ * オンは中央から左右に伸び、少し行き過ぎて収まる。オフは中央の光る点に縮んで消える。
+ */
+export const LINE_ON = {
+  initial: { scaleX: 0, opacity: 0, filter: "brightness(3)" },
+  animate: { scaleX: 1, filter: "brightness(1)" },
+  transition: { duration: 0.32, ease: [0.34, 1.56, 0.64, 1] as const },
+};
+export const LINE_OFF = {
+  scaleX: [1, 0.06, 0],
+  scaleY: [1, 2, 2],
+  opacity: [1, 1, 0],
+  filter: ["brightness(1)", "brightness(4)", "brightness(6)"],
+  transition: { duration: 0.26, times: [0, 0.6, 1], ease: "easeIn" as const },
+};
+
+/** タブのチップを閉じるとき: 先にラインが縮み始めてから、チップ全体が横線に潰れる */
+export const TAB_EXIT = { ...CRT_EXIT, transition: { ...CRT_EXIT.transition, delay: 0.1 } };
 
 /** パネル共通の枠（ガラス調の背景・境界線・影） */
 export const PANEL_CLASS =

@@ -18,7 +18,8 @@ import {
 import { KEYS } from "../keymap";
 import { tabAccent } from "../tabColors";
 import { formatDuration } from "../services/notifications";
-import { Kbd, ShellBadge, StatusDot } from "./ui";
+import { CRT_EXIT, Kbd, ShellBadge, StatusDot } from "./ui";
+import { prefersReducedMotion } from "../services/crt";
 
 export type OverviewMode = "browse" | "switch";
 
@@ -51,6 +52,10 @@ interface Item {
 /** プレビューの行数と更新間隔 */
 const PREVIEW_LINES = 12;
 const PREVIEW_REFRESH_MS = 500;
+/** 選んだカードが光ってから切り替えるまでの時間（styles/crt.css の crt-select） */
+const SELECT_FLARE_MS = 190;
+/** カードが順番に電源オンする刻み */
+const CARD_STAGGER_MS = 35;
 /** Ctrl+Tab を一瞬だけ押した場合は一覧を出さずに直前のペインへ切り替える */
 const SWITCH_REVEAL_DELAY_MS = 140;
 
@@ -190,13 +195,25 @@ function OverviewSurface({
     return Math.max(1, getComputedStyle(grid).gridTemplateColumns.split(" ").length);
   };
 
+  /** 選んだカードを光らせ、ほかを沈めてから切り替える（browse のみ。Ctrl+Tab は即座に） */
+  const [committing, setCommitting] = useState<string | null>(null);
   const commit = useCallback(
     (paneId?: string) => {
+      if (committing) return;
       const id = paneId ?? items[selectedIndex]?.pane.id;
-      if (id) onSelect(id);
-      else onDismiss();
+      if (!id) {
+        onDismiss();
+        return;
+      }
+      if (mode === "switch" || prefersReducedMotion()) {
+        onSelect(id);
+        return;
+      }
+      setSelectedId(id);
+      setCommitting(id);
+      window.setTimeout(() => onSelect(id), SELECT_FLARE_MS);
     },
-    [items, selectedIndex, onSelect, onDismiss]
+    [committing, items, selectedIndex, mode, onSelect, onDismiss]
   );
 
   const closeSelected = useCallback(() => {
@@ -220,6 +237,12 @@ function OverviewSurface({
         e.preventDefault();
         e.stopPropagation();
       };
+      // 確定の演出中（選んだカードが光っている間）は何も受け付けない。
+      // ここで Delete や Esc が効くと、切り替え先のペインを閉じたり、閉じた後に切り替わったりする
+      if (committing) {
+        handled();
+        return;
+      }
 
       if (mode === "switch" && !e.ctrlKey) {
         // Ctrl を離した後のキーは確定扱い
@@ -287,7 +310,7 @@ function OverviewSurface({
       window.removeEventListener("keyup", onKeyUp, true);
       window.removeEventListener("blur", onBlur);
     };
-  }, [isPresent, suspended, mode, move, commit, closeSelected, onDismiss, items, query]);
+  }, [isPresent, suspended, committing, mode, move, commit, closeSelected, onDismiss, items, query]);
 
   const tabCount = tabs.length;
   const compact = mode === "switch";
@@ -383,6 +406,7 @@ function OverviewSurface({
                     homeDir={homeDir}
                     lastOutputAt={paneStateStore.getLastOutputAt(item.pane.id)}
                     now={now}
+                    committing={committing}
                     onHover={setSelectedId}
                     onOpen={commit}
                     onClose={onClosePane}
@@ -438,6 +462,8 @@ interface PaneCardProps {
   homeDir?: string;
   lastOutputAt?: number;
   now: number;
+  /** 切り替えを確定したカード（演出中） */
+  committing: string | null;
   onHover: (paneId: string) => void;
   onOpen: (paneId: string) => void;
   onClose: (paneId: string) => void;
@@ -455,6 +481,7 @@ const PaneCard = memo(function PaneCard({
   homeDir,
   lastOutputAt,
   now,
+  committing,
   onHover,
   onOpen,
   onClose,
@@ -471,10 +498,12 @@ const PaneCard = memo(function PaneCard({
     <motion.div
       layout
       data-overview-pane={pane.id}
-      initial={{ opacity: 0, scale: 0.94, y: 10 }}
-      animate={{ opacity: 1, scale: selected ? 1.015 : 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.15 } }}
-      transition={{ type: "spring", damping: 28, stiffness: 360, delay: Math.min(index, 12) * 0.018 }}
+      // 出現は CSS の電源オン（順番に点灯）、選択の拡大と並び替えは framer、消えるときは横線に潰れる
+      initial={false}
+      animate={{ scale: selected ? 1.015 : 1 }}
+      exit={CRT_EXIT}
+      transition={{ type: "spring", damping: 28, stiffness: 360 }}
+      style={{ "--crt-delay": `${Math.min(index, 14) * CARD_STAGGER_MS}ms`, "--crt-duration": "460ms" } as React.CSSProperties}
       onMouseEnter={() => onHover(pane.id)}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={() => onOpen(pane.id)}
@@ -487,7 +516,9 @@ const PaneCard = memo(function PaneCard({
       role="button"
       aria-label={`${title} in ${tabLabel}`}
       aria-pressed={selected}
-      className={`group relative flex flex-col overflow-hidden rounded-xl border bg-bg-main text-left shadow-[var(--shadow-lg)] transition-[border-color,box-shadow] duration-150 ${
+      className={`group crt-on relative flex flex-col overflow-hidden rounded-xl border bg-bg-main text-left shadow-[var(--shadow-lg)] transition-[border-color,box-shadow,opacity] duration-150 ${
+        committing ? `pointer-events-none ${committing === pane.id ? "crt-select" : "opacity-30"}` : ""
+      } ${
         selected
           ? "border-accent shadow-[0_0_0_3px_var(--accent-dim),var(--shadow-lg)]"
           : "border-border-strong hover:border-tx-muted/50"

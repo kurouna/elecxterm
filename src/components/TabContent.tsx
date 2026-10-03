@@ -1,4 +1,5 @@
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
+import { flash } from "../services/crt";
 import { SplitLayout } from "./SplitLayout";
 import { TerminalPane } from "./TerminalPane";
 import { Tab } from "../types";
@@ -26,9 +27,20 @@ function TabContentComponent({ tab, isActive }: TabContentProps) {
   );
   const zoomedPane = zoomed ? findPane(tab.layout, tab.activePaneId) : undefined;
 
+  // タブを切り替えて表に出たとき、チャンネルを変えたような一瞬の明滅を入れる
+  // （新しく開いたタブは、ペインの電源オン演出に任せる）
+  const contentRef = useRef<HTMLDivElement>(null);
+  const wasActive = useRef(isActive);
+  useEffect(() => {
+    if (isActive && !wasActive.current) flash(contentRef.current);
+    wasActive.current = isActive;
+  }, [isActive]);
+
   return (
     <TabInfoContext.Provider value={info}>
       <div
+        ref={contentRef}
+        data-tab-content={tab.id}
         aria-hidden={!isActive}
         className="absolute inset-0"
         style={{

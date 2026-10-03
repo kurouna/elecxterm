@@ -37,8 +37,8 @@ export function Prompt({ request, onClose }: PromptProps) {
   };
 
   return (
-    <Overlay open={request !== null} onClose={onClose} label={request?.title ?? "Prompt"}>
-      <div className={`${PANEL_CLASS} max-w-[560px]`}>
+    <Overlay open={request !== null} onClose={onClose} label={request?.title ?? "Prompt"} width={560}>
+      <div className={PANEL_CLASS}>
         <div className="px-5 pb-1 pt-4">
           <div className="text-[13.5px] font-semibold text-tx-primary">{request?.title}</div>
           {request?.description && <div className="mt-0.5 text-[12px] text-tx-muted">{request.description}</div>}

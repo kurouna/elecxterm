@@ -1,0 +1,252 @@
+/*
+ * CRT の電源オン・オフ演出（elecdex の styles/crt.css を移植）。
+ *
+ * 画面は中央の 1 本の明るい横線から上下に開き（easeOutBack で少し行き過ぎてから収まる）、
+ * 開いていく上下の縁にビームが光り、半分開くまで走査線がちらつく。電源オフはその逆で、
+ * 絵が横線に潰れ、線が点になって消える。
+ *
+ * どれも transform / opacity / filter だけで描くので合成処理だけで済み、レイアウト（＝端末の
+ * サイズ）は変わらない。サイズを補間すると ConPTY に途中のサイズが届いて履歴が崩れるため、
+ * 端末を含む要素に width / height のアニメーションは使わないこと。
+ *
+ * 使い方: 要素に `crt-on` を付ける（`--crt-delay` / `--crt-duration` で調整）。
+ * `crt-off` は電源オフ、`crt-beam` は潰れていく縁を光らせる。`crt-flash` はタブ切り替えの
+ * 一瞬の明滅、`crt-select` は選ばれたカードの発光。
+ * 疑似要素は opacity 0 を基本にし、アニメーション中だけ見せる（終われば GPU レイヤーも解放される）。
+ */
+
+.crt-on,
+.crt-off,
+.crt-beam,
+.crt-select {
+  position: relative;
+  transform-origin: 50% 50%;
+}
+
+.crt-on {
+  animation: crt-power-on var(--crt-duration, 650ms) linear var(--crt-delay, 0ms) backwards;
+}
+
+/* ビーム: 開く上下の縁だけに光る線とにじみ。開くにつれて薄れる */
+.crt-on::after,
+.crt-on::before,
+.crt-beam::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  border-radius: inherit;
+  opacity: 0;
+}
+
+.crt-on::after,
+.crt-beam::after {
+  background:
+    linear-gradient(to bottom, var(--accent) 0 2px, var(--accent-dim) 2px, transparent 0.9rem),
+    linear-gradient(to top, var(--accent) 0 2px, var(--accent-dim) 2px, transparent 0.9rem);
+  animation: crt-beam var(--crt-duration, 650ms) linear var(--crt-delay, 0ms) backwards;
+}
+
+.crt-beam::after {
+  animation-name: crt-beam-off;
+}
+
+/* 管が温まるまでちらつく走査線 */
+.crt-on::before {
+  background: repeating-linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--accent) 16%, transparent) 0 1px,
+    transparent 1px 3px
+  );
+  animation: crt-scan var(--crt-duration, 650ms) steps(1, end) var(--crt-delay, 0ms) backwards;
+}
+
+@keyframes crt-power-on {
+  /* 何も無い状態から、全幅・極細・露出オーバーの横線へ */
+  0% {
+    opacity: 0;
+    transform: scale(0.3, 0.004);
+    filter: brightness(5) saturate(0.4);
+  }
+  6% {
+    opacity: 1;
+    transform: scale(1, 0.004);
+    filter: brightness(5) saturate(0.4);
+    /* easeOutBack: 少し行き過ぎてから収まる */
+    animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  58% {
+    transform: scale(1, 1);
+    filter: brightness(1.9) saturate(0.8);
+    animation-timing-function: ease-out;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+@keyframes crt-beam {
+  0%,
+  6% {
+    opacity: 1;
+  }
+  52% {
+    opacity: 0.55;
+  }
+  70%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* 半分開くまで走査線が明滅する */
+@keyframes crt-scan {
+  0% {
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  16% {
+    opacity: 0.35;
+  }
+  24% {
+    opacity: 1;
+  }
+  32% {
+    opacity: 0.5;
+  }
+  40% {
+    opacity: 0.9;
+  }
+  50% {
+    opacity: 0.4;
+  }
+  62%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.crt-off {
+  animation: crt-power-off var(--crt-duration, 340ms) ease-in var(--crt-delay, 0ms) both;
+}
+
+@keyframes crt-power-off {
+  0% {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1, 0.004);
+    filter: brightness(4);
+  }
+  80% {
+    opacity: 1;
+    transform: scale(0.02, 0.004);
+    filter: brightness(6);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0, 0);
+    filter: brightness(6);
+  }
+}
+
+/* 線に潰れている間がいちばん明るく、点とともに消える */
+@keyframes crt-beam-off {
+  0% {
+    opacity: 0.3;
+  }
+  45%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* タブ切り替え: チャンネルを変えたときの一瞬の露出オーバー */
+.crt-flash {
+  animation: crt-flash 220ms ease-out both;
+}
+
+@keyframes crt-flash {
+  0% {
+    opacity: 0.4;
+    filter: brightness(2.2) saturate(0.6);
+  }
+  100% {
+    opacity: 1;
+    filter: none;
+  }
+}
+
+/* 概要表示で選ばれたカード: 少し寄って光る */
+.crt-select {
+  animation: crt-select 200ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes crt-select {
+  0% {
+    transform: none;
+    filter: none;
+  }
+  60% {
+    transform: scale(1.045);
+    filter: brightness(1.8) saturate(0.8);
+  }
+  100% {
+    transform: scale(1.03);
+    filter: brightness(1.4);
+  }
+}
+
+/* アプリ起動時、タイトルバーとステータスバーは静かに現れる（ペインは順に電源オン） */
+.chrome-boot {
+  animation: chrome-boot 420ms ease-out both;
+}
+
+@keyframes chrome-boot {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/*
+ * テーマ切り替え（themeTransition.ts）: 画面全体の CRT 切り替え。古い絵が横線に潰れて消え、
+ * 新しい絵が線から開く。アニメーション自体は JS（Web Animations）で付けるので、ここでは
+ * 既定のクロスフェードを止め、遷移中の背景を「消えた管」の黒にする（ウィンドウが透明なので
+ * 何も敷かないとデスクトップが透けてしまう）。
+ */
+::view-transition {
+  background: #000;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crt-on,
+  .crt-off,
+  .crt-flash,
+  .crt-select,
+  .chrome-boot,
+  .crt-on::before,
+  .crt-on::after,
+  .crt-beam::after {
+    animation: none;
+  }
+}

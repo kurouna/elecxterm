@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { ArrowDown, ArrowUp, CaseSensitive, Regex, WholeWord, X } from "lucide-react";
 import type { ISearchOptions } from "@xterm/addon-search";
 import { TerminalEntry } from "../services/terminalRegistry";
-import { IconButton } from "./ui";
+import { CRT_EXIT, IconButton } from "./ui";
 
 interface FindBarProps {
   entry: TerminalEntry;
@@ -94,11 +94,10 @@ export function FindBar({ entry, onClose }: FindBarProps) {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: -6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -6 }}
-      transition={{ duration: 0.12 }}
-      className="absolute right-3 top-2 z-30 flex items-center gap-1 rounded-lg border border-border-strong bg-bg-glass p-1 shadow-[var(--shadow-lg)] backdrop-blur-xl"
+      initial={false}
+      exit={CRT_EXIT}
+      style={{ "--crt-duration": "300ms" } as React.CSSProperties}
+      className="crt-on absolute right-3 top-2 z-30 flex items-center gap-1 rounded-lg border border-border-strong bg-bg-glass p-1 shadow-[var(--shadow-lg)] backdrop-blur-xl"
       onPointerDown={(e) => e.stopPropagation()}
     >
       <input

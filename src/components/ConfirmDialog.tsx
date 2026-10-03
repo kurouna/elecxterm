@@ -38,8 +38,8 @@ export function ConfirmDialog({ request, onClose }: ConfirmDialogProps) {
   }, [request, onClose]);
 
   return (
-    <Overlay open={request !== null} onClose={onClose} align="center" label={request?.title ?? "Confirm"} zIndex={1050}>
-      <div className={`${PANEL_CLASS} max-w-[440px]`}>
+    <Overlay open={request !== null} onClose={onClose} align="center" label={request?.title ?? "Confirm"} zIndex={1050} width={440}>
+      <div className={PANEL_CLASS}>
         <div className="flex gap-3 px-5 pb-3 pt-4">
           <AlertTriangle size={18} className="mt-0.5 shrink-0 text-warning" />
           <div className="min-w-0">

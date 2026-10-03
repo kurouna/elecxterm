@@ -185,8 +185,8 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
   let flatIndex = -1;
 
   return (
-    <Overlay open={isOpen} onClose={onClose} label="Command palette">
-      <div className={`${PANEL_CLASS} max-w-[620px]`}>
+    <Overlay open={isOpen} onClose={onClose} label="Command palette" width={620}>
+      <div className={PANEL_CLASS}>
         <div className="flex items-center gap-2.5 border-b border-border-dim px-4 py-3">
           <Search size={16} className="text-accent" strokeWidth={2.4} />
           <input

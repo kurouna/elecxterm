@@ -71,8 +71,8 @@ export function SettingsPanel(props: SettingsPanelProps) {
   }, [open, onClose]);
 
   return (
-    <Overlay open={open} onClose={onClose} align="center" label="Settings">
-      <div className={`${PANEL_CLASS} flex max-h-[84vh] max-w-[720px] flex-col`}>
+    <Overlay open={open} onClose={onClose} align="center" label="Settings" width={720}>
+      <div className={`${PANEL_CLASS} flex max-h-[84vh] flex-col`}>
         <div className="flex items-center gap-2 border-b border-border-dim px-5 py-3">
           <Settings size={16} className="text-accent" />
           <span className="text-[14px] font-semibold text-tx-primary">Settings</span>

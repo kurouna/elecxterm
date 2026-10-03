@@ -42,7 +42,7 @@ export function StatusBar({
   const nearLimit = totalPanes >= maxPanes - 2;
 
   return (
-    <div className="flex h-[26px] shrink-0 select-none items-center gap-3 border-t border-border-dim bg-bg-chrome px-3 text-[11px] text-tx-muted">
+    <div className="chrome-boot flex h-[26px] shrink-0 select-none items-center gap-3 border-t border-border-dim bg-bg-chrome px-3 text-[11px] text-tx-muted">
       {/* 左: アクティブペインの情報 */}
       {activePane && (
         <div className="flex min-w-0 items-center gap-2">
