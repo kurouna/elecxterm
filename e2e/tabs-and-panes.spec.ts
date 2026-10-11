@@ -318,6 +318,48 @@ test.describe("dialogs", () => {
     await expect(menu).toHaveCount(0);
   });
 
+  test("the new-tab shell menu is drawn above the panes", async ({ page }) => {
+    await page.getByRole("button", { name: "New tab with shell…" }).click();
+    const menu = page.getByRole("menu");
+    await expect(menu.getByRole("menuitem", { name: "PowerShell" })).toBeVisible();
+    // 電源オンの演出が終わってから、メニュー下端（ペインに重なる位置）の最前面を確かめる
+    await expect
+      .poll(() =>
+        menu.evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          return el.contains(document.elementFromPoint(r.left + r.width / 2, r.bottom - 8));
+        }),
+      )
+      .toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+  });
+
+  test("the tab menus open a shell, close a tab and close on an outside click", async ({ page }) => {
+    const shellMenu = page.getByRole("button", { name: "New tab with shell…" });
+    const menu = page.getByRole("menu");
+
+    await shellMenu.click();
+    await menu.getByRole("menuitem", { name: "PowerShell" }).click();
+    await expect(menu).toHaveCount(0);
+    await expect(tabs(page)).toHaveCount(2);
+    await expect(tabs(page).nth(1)).toHaveAttribute("aria-selected", "true");
+    const [pane] = await paneIds(page);
+    await expectFocusedPane(page, pane);
+
+    // メニューの外側を押すと閉じ、その下のペインには何も起きない
+    await shellMenu.click();
+    await expect(menu).toBeVisible();
+    await page.mouse.click(400, 400);
+    await expect(menu).toHaveCount(0);
+    await expect(tabs(page)).toHaveCount(2);
+
+    await tabs(page).nth(1).click({ button: "right" });
+    await menu.getByRole("menuitem", { name: "Close tab" }).click();
+    await expect(tabs(page)).toHaveCount(1);
+    await expectNoLeakedShells(page);
+  });
+
   test("Ctrl+Shift+Z zooms the active pane and restores the layout", async ({ page }) => {
     await page.keyboard.press("Control+Shift+D");
     await expect(visiblePanes(page)).toHaveCount(2);

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import { Bell, ChevronDown, LayoutGrid, Maximize2, Pencil, Plus, RotateCcw, Terminal, X, XSquare } from "lucide-react";
@@ -317,90 +318,96 @@ export function TabBar({
         </IconButton>
       </div>
 
-      <AnimatePresence>
-        {menu && (
-          <>
-            <div
-              className="fixed inset-0 z-[900]"
-              onPointerDown={() => setMenu(null)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setMenu(null);
-              }}
-            />
-            <motion.div
-              ref={menuRef}
-              role="menu"
-              initial={false}
-              exit={CRT_EXIT}
-              style={{ top: menu.y, left: menu.x, "--crt-duration": "260ms" } as React.CSSProperties}
-              className="crt-on titlebar-no-drag fixed z-[901] w-56 overflow-hidden rounded-lg border border-border-strong bg-bg-glass p-1 shadow-[var(--shadow-lg)] backdrop-blur-2xl"
-            >
-              {menu.kind === "new" ? (
-                <>
-                  <MenuItem icon={<Terminal size={13} />} label="Command Prompt" hint={KEYS.newTab} onClick={() => { onTabAdd("cmd.exe"); setMenu(null); }} />
-                  <MenuItem icon={<Terminal size={13} className="text-info" />} label="PowerShell" onClick={() => { onTabAdd("pwsh.exe"); setMenu(null); }} />
-                </>
-              ) : (
-                menuTab && (
+      {/* メニューは body 直下へ出す。タイトルバーは起動演出（opacity）で独自の重ね合わせ
+          コンテキストになるため、中に置くと z-index がタイトルバー内でしか効かず、
+          後から描かれるペイン（xterm の canvas など）の下に隠れてしまう */}
+      {createPortal(
+        <AnimatePresence>
+          {menu && (
+            <>
+              <div
+                className="fixed inset-0 z-[900]"
+                onPointerDown={() => setMenu(null)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setMenu(null);
+                }}
+              />
+              <motion.div
+                ref={menuRef}
+                role="menu"
+                initial={false}
+                exit={CRT_EXIT}
+                style={{ top: menu.y, left: menu.x, "--crt-duration": "260ms" } as React.CSSProperties}
+                className="crt-on titlebar-no-drag fixed z-[901] w-60 overflow-hidden rounded-lg border border-border-strong bg-bg-glass p-1 shadow-[var(--shadow-lg)] backdrop-blur-2xl"
+              >
+                {menu.kind === "new" ? (
                   <>
-                    <MenuItem icon={<Pencil size={13} />} label="Rename" hint="Double-click" onClick={() => startRename(menuTab, states)} />
-                    {menuTab.renamed && (
-                      <MenuItem
-                        icon={<RotateCcw size={13} />}
-                        label="Use automatic name"
-                        onClick={() => { onTabRename(menuTab.id, ""); setMenu(null); }}
-                      />
-                    )}
-                    <div className="mx-1 my-1 border-t border-border-dim" />
-                    <div className="px-2 pb-1 pt-0.5 text-[10.5px] text-tx-muted">Tab color</div>
-                    <div className="flex items-center gap-1.5 px-2 pb-1.5">
-                      <button
-                        type="button"
-                        aria-label="Automatic color"
-                        title="Automatic"
-                        onClick={() => { onTabColor(menuTab.id, undefined); setMenu(null); }}
-                        className={`flex h-4 w-4 items-center justify-center rounded-full border border-border-strong text-tx-muted ${
-                          !menuTab.color ? "ring-2 ring-accent ring-offset-1 ring-offset-bg-elevated" : ""
-                        }`}
-                      >
-                        <X size={9} />
-                      </button>
-                      {TAB_COLORS.map((color) => (
-                        <button
-                          key={color}
-                          type="button"
-                          aria-label={`${color} tab color`}
-                          title={color}
-                          onClick={() => { onTabColor(menuTab.id, color); setMenu(null); }}
-                          className={`h-4 w-4 rounded-full transition-transform hover:scale-125 ${
-                            menuTab.color === color ? "ring-2 ring-tx-primary ring-offset-1 ring-offset-bg-elevated" : ""
-                          }`}
-                          style={{ background: colorSwatch(color) }}
-                        />
-                      ))}
-                    </div>
-                    <div className="mx-1 my-1 border-t border-border-dim" />
-                    <MenuItem
-                      icon={<XSquare size={13} />}
-                      label="Close other tabs"
-                      disabled={tabs.length < 2}
-                      onClick={() => { onCloseOthers(menuTab.id); setMenu(null); }}
-                    />
-                    <MenuItem
-                      icon={<X size={13} />}
-                      label="Close tab"
-                      hint="Middle-click"
-                      danger
-                      onClick={() => { onTabClose(menuTab.id); setMenu(null); }}
-                    />
+                    <MenuItem icon={<Terminal size={13} />} label="Command Prompt" hint={KEYS.newTab} onClick={() => { onTabAdd("cmd.exe"); setMenu(null); }} />
+                    <MenuItem icon={<Terminal size={13} className="text-info" />} label="PowerShell" onClick={() => { onTabAdd("pwsh.exe"); setMenu(null); }} />
                   </>
-                )
-              )}
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+                ) : (
+                  menuTab && (
+                    <>
+                      <MenuItem icon={<Pencil size={13} />} label="Rename" hint="Double-click" onClick={() => startRename(menuTab, states)} />
+                      {menuTab.renamed && (
+                        <MenuItem
+                          icon={<RotateCcw size={13} />}
+                          label="Use automatic name"
+                          onClick={() => { onTabRename(menuTab.id, ""); setMenu(null); }}
+                        />
+                      )}
+                      <div className="mx-1 my-1 border-t border-border-dim" />
+                      <div className="px-2 pb-1 pt-0.5 text-[10.5px] text-tx-muted">Tab color</div>
+                      <div className="flex items-center gap-1.5 px-2 pb-1.5">
+                        <button
+                          type="button"
+                          aria-label="Automatic color"
+                          title="Automatic"
+                          onClick={() => { onTabColor(menuTab.id, undefined); setMenu(null); }}
+                          className={`flex h-4 w-4 items-center justify-center rounded-full border border-border-strong text-tx-muted ${
+                            !menuTab.color ? "ring-2 ring-accent ring-offset-1 ring-offset-bg-elevated" : ""
+                          }`}
+                        >
+                          <X size={9} />
+                        </button>
+                        {TAB_COLORS.map((color) => (
+                          <button
+                            key={color}
+                            type="button"
+                            aria-label={`${color} tab color`}
+                            title={color}
+                            onClick={() => { onTabColor(menuTab.id, color); setMenu(null); }}
+                            className={`h-4 w-4 rounded-full transition-transform hover:scale-125 ${
+                              menuTab.color === color ? "ring-2 ring-tx-primary ring-offset-1 ring-offset-bg-elevated" : ""
+                            }`}
+                            style={{ background: colorSwatch(color) }}
+                          />
+                        ))}
+                      </div>
+                      <div className="mx-1 my-1 border-t border-border-dim" />
+                      <MenuItem
+                        icon={<XSquare size={13} />}
+                        label="Close other tabs"
+                        disabled={tabs.length < 2}
+                        onClick={() => { onCloseOthers(menuTab.id); setMenu(null); }}
+                      />
+                      <MenuItem
+                        icon={<X size={13} />}
+                        label="Close tab"
+                        hint="Middle-click"
+                        danger
+                        onClick={() => { onTabClose(menuTab.id); setMenu(null); }}
+                      />
+                    </>
+                  )
+                )}
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
     </div>
   );
 }
@@ -431,7 +438,7 @@ function MenuItem({
       }`}
     >
       <span className="opacity-70">{icon}</span>
-      <span className="flex-1">{label}</span>
+      <span className="flex-1 whitespace-nowrap">{label}</span>
       {hint && (hint.includes("+") ? <Kbd keys={hint} className="opacity-60" /> : <span className="text-[10.5px] opacity-50">{hint}</span>)}
     </button>
   );
