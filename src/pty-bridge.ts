@@ -32,8 +32,19 @@ class PtyBridge {
   ): Promise<{ shell: string; dispose: () => void }> {
     const channel = new Channel<ArrayBuffer>();
     let active = true;
+    let warned = false;
     channel.onmessage = (message) => {
-      if (active) onData(new Uint8Array(message));
+      if (!active) return;
+      // Channel は届いた順に番号で処理し、ハンドラが例外を投げるとその番号から先へ進まない
+      // （以後の出力はすべて溜まるだけで、ペインは二度と何も表示しなくなる）。
+      // xterm の write は処理待ちが 50 MB を超えると投げるので、ここで必ず受け止める。
+      try {
+        onData(new Uint8Array(message));
+      } catch (e) {
+        // 溢れている間は塊ごとに投げるので、痕跡は PTY ごとに 1 回だけ残す
+        if (!warned) console.warn(`pty output (${options.id}) was dropped:`, e);
+        warned = true;
+      }
     };
     const dispose = () => {
       active = false;

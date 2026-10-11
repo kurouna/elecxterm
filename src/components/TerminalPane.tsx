@@ -52,6 +52,8 @@ function TerminalPaneComponent({ pane, isActive }: TerminalPaneProps) {
     const current = entryRef.current;
     // 非表示タブ（visibility: hidden）でもサイズは保たれるが、0 サイズの時は測れないので飛ばす
     if (!current || !hostRef.current?.clientWidth) return;
+    // GPU のコンテキストを失って DOM で描いていれば、表示されたここで WebGL に戻す
+    current.resumeRenderer();
     try {
       // 寸法が変われば xterm の onResize 経由で PTY にも通知される
       current.fitAddon.fit();

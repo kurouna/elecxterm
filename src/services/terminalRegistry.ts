@@ -7,6 +7,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { ptyBridge } from "../pty-bridge";
 import { paneStateStore } from "./PaneStateStore";
 import { paneElement, powerOn } from "./crt";
+import { WebglKeeper } from "./webglKeeper";
 import type { CursorStyle } from "../types";
 
 /**
@@ -53,6 +54,8 @@ export interface TerminalEntry {
   createdAt: number;
   /** まとめて生成された（起動時の復元など）ときに、順番に電源が入るよう遅らせる時間 */
   powerOnDelay: number;
+  /** GPU のコンテキストを失って DOM レンダラーで描いていれば、表示中なら WebGL に戻す。fit のたびに呼ぶ */
+  resumeRenderer: () => void;
 }
 
 interface InternalEntry extends TerminalEntry {
@@ -93,6 +96,7 @@ export function attachTerminal(host: HTMLElement, options: TerminalAttachOptions
   if (existing) {
     host.appendChild(existing.rootEl);
     applyAppearance(existing, options);
+    existing.resumeRenderer();
     return existing;
   }
   const entry = createEntry(host, options);
@@ -181,17 +185,25 @@ function createEntry(host: HTMLElement, options: TerminalAttachOptions): Interna
   );
   terminal.open(rootEl);
 
-  let webglAddon: WebglAddon | null = null;
-  try {
-    webglAddon = new WebglAddon();
-    webglAddon.onContextLoss(() => {
-      webglAddon?.dispose();
-      webglAddon = null;
-    });
-    terminal.loadAddon(webglAddon);
-  } catch (e) {
-    console.warn("WebGL addon failed to load:", e);
-  }
+  // WebGL は open() の後に読み込む。失ったコンテキストは待たずに DOM レンダラーへ移る（WebglKeeper）
+  const sized = () => rootEl.isConnected && rootEl.clientWidth > 0;
+  const webgl = new WebglKeeper({
+    element: rootEl,
+    create: () => new WebglAddon(),
+    load: (addon) => terminal.loadAddon(addon),
+    // ズームで外されたペイン（rootEl が DOM に無い）は試さず、付け直されたときに試す
+    visible: sized,
+    changed: () => {
+      if (sized()) {
+        try {
+          fitAddon.fit();
+        } catch {
+          // レイアウト前は次の fit に任せる
+        }
+      }
+      terminal.refresh(0, terminal.rows - 1);
+    },
+  });
 
   try {
     fitAddon.fit();
@@ -207,6 +219,7 @@ function createEntry(host: HTMLElement, options: TerminalAttachOptions): Interna
     paneId,
     createdAt,
     powerOnDelay: Math.min(burstIndex, 8) * POWER_ON_STAGGER_MS,
+    resumeRenderer: () => webgl.resume(),
     ptyId: paneId,
     generation: 0,
     rootEl,
@@ -390,7 +403,7 @@ function createEntry(host: HTMLElement, options: TerminalAttachOptions): Interna
     entry.resetShellState();
     [oscCwd, oscFileUrl, osc133, titleDisposable, bellDisposable, dataDisposable, resizeDisposable]
       .forEach((d) => d.dispose());
-    webglAddon?.dispose();
+    webgl.dispose();
     terminal.dispose();
     rootEl.remove();
   };

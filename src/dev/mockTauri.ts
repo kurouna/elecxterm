@@ -23,6 +23,8 @@ interface FakeShell {
   channel: Channel<ArrayBuffer>;
   timer: number | null;
   lastExit: number;
+  /** Channel に送った数（次の番号） */
+  sent: number;
 }
 
 const shells = new Map<string, FakeShell>();
@@ -31,7 +33,18 @@ const store = new Map<string, unknown>(
 );
 
 function send(sh: FakeShell, text: string) {
-  sh.channel.onmessage(encoder.encode(text).buffer as ArrayBuffer);
+  deliver(sh, encoder.encode(text).buffer as ArrayBuffer);
+}
+
+/**
+ * 本物の Tauri と同じく、Channel の番号付きの経路で渡す。ハンドラが例外を投げると
+ * そこで順番が止まり、以後の出力が届かなくなるところまで実機と同じになる。
+ */
+function deliver(sh: FakeShell, message: ArrayBuffer) {
+  const internals = (window as unknown as {
+    __TAURI_INTERNALS__: { runCallback: (id: number, data: unknown) => void };
+  }).__TAURI_INTERNALS__;
+  internals.runCallback(sh.channel.id, { index: sh.sent++, message });
 }
 
 function isPwsh(sh: FakeShell) {
@@ -109,6 +122,13 @@ function run(sh: FakeShell, input: string) {
     case "bell":
       send(sh, "\x07");
       break;
+    case "flood": {
+      // 大量出力の模擬: N MB（既定 60）を一気に流し、xterm の処理待ちの上限（50 MB）を超えさせる
+      const bytes = (Number(arg) || 60) * 1024 * 1024;
+      const chunk = encoder.encode("y\r\n".repeat(21_845)).buffer as ArrayBuffer;
+      for (let sent = 0; sent < bytes; sent += chunk.byteLength) deliver(sh, chunk);
+      break;
+    }
     case "colors":
       for (let i = 0; i < 8; i++) send(sh, `\x1b[3${i}m██ color ${i}  \x1b[9${i}m██ bright ${i}\x1b[0m\r\n`);
       break;
@@ -134,7 +154,7 @@ function run(sh: FakeShell, input: string) {
       shells.delete(sh.id);
       return;
     default:
-      send(sh, `'${cmd}' is not recognized as an internal or external command (mock shell).\r\nTry: dir, cd, echo, ping, sleep N, fail N, colors, bell, cls, exit\r\n`);
+      send(sh, `'${cmd}' is not recognized as an internal or external command (mock shell).\r\nTry: dir, cd, echo, ping, sleep N, fail N, colors, bell, flood N, cls, exit\r\n`);
   }
   send(sh, "\r\n");
   prompt(sh);
@@ -197,6 +217,7 @@ export function installTauriMock() {
             channel: args.onData,
             timer: null,
             lastExit: 0,
+            sent: 0,
           };
           shells.set(id, sh);
           ipcLog.push({ cmd, id, shell: sh.shell });
