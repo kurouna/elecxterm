@@ -54,6 +54,37 @@ test.describe("tabs", () => {
     await expect(tabs(page).nth(2)).toHaveAttribute("aria-selected", "true");
   });
 
+  test("dragging a tab reorders it without shifting any tab up or down", async ({ page }) => {
+    for (let i = 0; i < 3; i++) await page.keyboard.press("Control+Shift+T");
+    await expect(tabs(page)).toHaveCount(4);
+    // 新しいタブは電源オンの演出で現れ、終われば止まる
+    const powerOn = (els: Element[]) =>
+      els.filter((e) => e.getAnimations().some((a) => (a as CSSAnimation).animationName === "crt-power-on")).length;
+    await expect.poll(() => tabs(page).evaluateAll(powerOn)).toBe(0);
+
+    const ids = await tabs(page).evaluateAll((els) => els.map((e) => e.getAttribute("data-tab-id")));
+    const from = (await tabs(page).nth(3).boundingBox())!;
+    const to = (await tabs(page).nth(0).boundingBox())!;
+    const tops = () => tabs(page).evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top));
+
+    await page.mouse.move(from.x + 50, from.y + 16);
+    await page.mouse.down();
+    for (let i = 1; i <= 20; i++) {
+      await page.mouse.move(from.x + 50 + ((to.x - from.x) * i) / 20, from.y + 16);
+      // DOM の並べ替えで電源オンが再生されると、潰れた途中の大きさがレイアウトとして測られ、タブが上下にずれる
+      expect(await tabs(page).evaluateAll(powerOn)).toBe(0);
+      for (const top of await tops()) expect(top).toBeCloseTo(from.y, 0);
+    }
+    await page.mouse.up();
+
+    await expect
+      .poll(() => tabs(page).evaluateAll((els) => els.map((e) => e.getAttribute("data-tab-id"))))
+      .toEqual([ids[3], ids[0], ids[1], ids[2]]);
+    await page.waitForTimeout(800);
+    for (const top of await tops()) expect(top).toBeCloseTo(from.y, 0);
+    await expectNoLeakedShells(page);
+  });
+
   test("closing a tab with its close button destroys every shell in it", async ({ page }) => {
     await page.keyboard.press("Control+Shift+T");
     await page.keyboard.press("Control+Shift+D");

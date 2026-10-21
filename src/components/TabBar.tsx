@@ -83,6 +83,16 @@ export function TabBar({
   useEffect(() => {
     seenTabsRef.current = new Set(tabs.map((t) => t.id));
   }, [tabs]);
+  /**
+   * 電源オンの演出を終えたタブ。終えたタブからは crt-on を外す。並べ替えで React が DOM ノードを
+   * 付け直すと CSS アニメーションが最初から再生され、縦に潰れた途中の大きさを framer-motion が
+   * レイアウトとして測ってしまい、タブが上下にずれたまま残るため。
+   */
+  const [poweredTabs, setPoweredTabs] = useState<ReadonlySet<string>>(() => new Set());
+  const powerOnDone = (tabId: string) => (e: React.AnimationEvent) => {
+    if (e.target !== e.currentTarget || e.animationName !== "crt-power-on") return;
+    setPoweredTabs((prev) => new Set(prev).add(tabId));
+  };
   const singleTab = tabs.length === 1;
 
   const startRename = (tab: Tab, states: Record<string, PaneVolatileState>) => {
@@ -196,13 +206,14 @@ export function TabBar({
                     onTabClose(tab.id);
                   }
                 }}
+                onAnimationEnd={powerOnDone(tab.id)}
                 onDoubleClick={() => startRename(tab, states)}
                 onContextMenu={(e: React.MouseEvent) => {
                   e.preventDefault();
                   setMenu({ x: e.clientX, y: e.clientY, tabId: tab.id, kind: "tab" });
                 }}
                 title={`${title}${info.count > 1 ? ` · ${info.count} panes` : ""}${index < 9 ? ` · Ctrl+Alt+${index + 1}` : ""}`}
-                className={`titlebar-no-drag group crt-on @container relative flex h-[32px] w-[200px] min-w-[84px] shrink select-none items-center gap-2 rounded-t-lg px-3 text-[12px] outline-none ${
+                className={`titlebar-no-drag group ${poweredTabs.has(tab.id) ? "" : "crt-on"} @container relative flex h-[32px] w-[200px] min-w-[84px] shrink select-none items-center gap-2 rounded-t-lg px-3 text-[12px] outline-none ${
                   isActive
                     ? "bg-tab-active text-tx-primary"
                     : "text-tx-muted hover:bg-tx-primary/[0.05] hover:text-tx-secondary"
