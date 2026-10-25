@@ -27,6 +27,10 @@ shrink to 84px before the strip scrolls; they use `@container`, so keep an expli
 zeroes their intrinsic size). With a single tab, dragging the tab moves the window via `startDragging()`
 after a 4 px move, so click and double-click still select and rename.
 
+`crt-on` is dropped from a tab once its power-on animation has played (`poweredTabs` in `TabBar.tsx`):
+reordering tabs makes React re-insert the DOM nodes, which would replay the animation, and
+framer-motion would then measure the squashed tab as its layout and leave it shifted vertically.
+
 Tab colors: `Tab.color` + `src/tabColors.ts` (`tabAccent`), shared by the tab bar and the overview.
 
 ## Overlays
