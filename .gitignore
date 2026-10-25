@@ -36,3 +36,7 @@ elecxterm-settings.json
 # Playwright
 /test-results/
 /playwright-report/
+
+# Claude Code (personal / generated)
+.claude/settings.local.json
+.claude/worktrees/
