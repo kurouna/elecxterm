@@ -854,5 +854,3 @@ export function useLayout(options?: UseLayoutOptions) {
     lastPane,
   };
 }
-
-export type LayoutApi = ReturnType<typeof useLayout>;

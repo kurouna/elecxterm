@@ -68,6 +68,8 @@ export function TabBar({
   const menuRef = useRef<HTMLDivElement>(null);
   // Escape でキャンセルした直後の blur で確定してしまわないためのフラグ
   const cancelRenameRef = useRef(false);
+  /** 名前変更を始めたときの表示名。自動命名のタブをそのまま確定しても命名扱いにしないために覚える */
+  const renameStartRef = useRef("");
   /**
    * タブが 1 つだけのときは、タブをつかんでウィンドウを動かせるようにする（Chrome と同じ）。
    * 押した瞬間ではなく少し動かしてから移動を始めることで、クリック・ダブルクリック
@@ -96,14 +98,22 @@ export function TabBar({
   const singleTab = tabs.length === 1;
 
   const startRename = (tab: Tab, states: Record<string, PaneVolatileState>) => {
+    const title = tabTitle(tab, states);
     cancelRenameRef.current = false;
+    renameStartRef.current = title;
     setRenameId(tab.id);
-    setTempName(tabTitle(tab, states));
+    setTempName(title);
     setMenu(null);
   };
 
   const finishRename = () => {
-    if (renameId && !cancelRenameRef.current && tempName.trim()) onTabRename(renameId, tempName);
+    const tab = tabs.find((t) => t.id === renameId);
+    const name = tempName.trim();
+    // 自動命名のタブを表示名のまま確定しただけなら、空の名前（＝自動命名）で確定して
+    // アクティブペインへの追従を続ける（入力中に表示名が変わっていても、今の表示名と同じなら同様）
+    const unchanged =
+      !!tab && !tab.renamed && (name === renameStartRef.current.trim() || name === tabTitle(tab, states).trim());
+    if (tab && !cancelRenameRef.current && name) onTabRename(tab.id, unchanged ? "" : tempName);
     cancelRenameRef.current = false;
     setRenameId(null);
   };

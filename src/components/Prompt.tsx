@@ -15,7 +15,7 @@ interface PromptProps {
   onClose: () => void;
 }
 
-/** 1 行入力のダイアログ（開始ディレクトリ・フォントなどの設定に使う） */
+/** 1 行入力のダイアログ（タブ名の変更に使う） */
 export function Prompt({ request, onClose }: PromptProps) {
   const [value, setValue] = useState("");
 

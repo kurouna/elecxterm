@@ -8,7 +8,9 @@ import { usePaneActions, usePaneUi, useTabInfo } from "./PaneContext";
 import {
   applyAppearance,
   attachTerminal,
+  copyTerminalSelection,
   focusTerminal,
+  pasteToTerminal,
   restartTerminal,
   TerminalEntry,
 } from "../services/terminalRegistry";
@@ -151,24 +153,22 @@ function TerminalPaneComponent({ pane, isActive }: TerminalPaneProps) {
   const handlePointerDown = useCallback(() => actions.focusPane(pane.id), [actions, pane.id]);
 
   // 右クリック: 選択があればコピー、無ければペースト（多くのターミナルエミュレータ共通の作法）
-  const handleContextMenu = useCallback(async (e: ReactMouseEvent) => {
-    e.preventDefault();
-    const terminal = entryRef.current?.terminal;
-    if (!terminal) return;
-    const selection = terminal.getSelection();
-    if (selection) {
-      await navigator.clipboard.writeText(selection).catch(() => {});
-      terminal.clearSelection();
-      return;
-    }
-    try {
-      const text = await navigator.clipboard.readText();
-      // bracketed paste mode の制御シーケンス付与を xterm に任せる
-      if (text) terminal.paste(text);
-    } catch {
-      // クリップボード権限が無い環境では黙って無視する
-    }
-  }, []);
+  const handleContextMenu = useCallback(
+    async (e: ReactMouseEvent) => {
+      e.preventDefault();
+      if (copyTerminalSelection(pane.id)) {
+        entryRef.current?.terminal.clearSelection();
+        return;
+      }
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text) pasteToTerminal(pane.id, text);
+      } catch {
+        // クリップボード権限が無い環境では黙って無視する
+      }
+    },
+    [pane.id]
+  );
 
   const title = paneTitle(pane, state);
   const cwd = shortenPath(state.cwd ?? pane.cwd, ui.homeDir);

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./public/elecxterm_repo_card.svg" width="800" alt="elecxterm - Next-generation terminal manager">
+  <img src="./docs/elecxterm_repo_card.svg" width="800" alt="elecxterm - Next-generation terminal manager">
 </p>
 
 <p align="center">

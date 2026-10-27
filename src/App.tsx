@@ -465,7 +465,9 @@ function App() {
       ...gotoCommands,
     ],
     [
-      layout, activeTab, activeTabId, activePane, activePaneNode, fontSize, showPaneHeaders, gotoCommands,
+      layout.togglePaneHeaders, layout.addTab, layout.nextTab, layout.prevTab, layout.equalizePanes,
+      layout.nextPane, layout.prevPane, layout.firstPane, layout.lastPane, layout.updateFontSize,
+      activeTab, activeTabId, activePane, activePaneNode, fontSize, showPaneHeaders, gotoCommands,
       splitActive, openFind, openRenamePrompt, toggleZoomAnimated, movePaneToNewTabAnimated, closePaneSafe, closeTabSafe, closeOtherTabsSafe, copyText, notify, changeTheme, toggleTheme, resolvedTheme,
     ]
   );

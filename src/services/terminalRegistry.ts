@@ -437,7 +437,9 @@ function startPty(entry: InternalEntry) {
     try {
       // 終了イベントは起動直後に飛んでくることもあるので、PTY 生成前に購読しておく
       unlistenExit = await ptyBridge.onExit(ptyId, (code) => {
-        paneStateStore.update(paneId, { status: "exited", exitCode: code });
+        // 終了したシェルからは OSC 133;A が来ない。`exit` などを実行中のまま残すと、閉じるときに確認が出てしまう
+        entry.resetShellState();
+        paneStateStore.update(paneId, { status: "exited", exitCode: code, runningCommand: undefined });
         const detail = code === null ? "" : ` with code ${code}`;
         terminal.write(`\r\n\x1b[90m[Process exited${detail}] Press Enter to restart.\x1b[0m\r\n`);
       });
@@ -512,10 +514,6 @@ export function destroyTerminal(paneId: string) {
   paneStateStore.deletePane(paneId);
 }
 
-export function getTerminalEntry(paneId: string): TerminalEntry | undefined {
-  return entries.get(paneId);
-}
-
 /**
  * ペインで実行中のコマンド名（シェル統合で分かる場合のみ）。表示用のストアは
  * エコー描画を待って少し遅れて更新されるため、閉じる前の確認などではこちらで最新を読む。
@@ -534,10 +532,10 @@ export function pasteToTerminal(paneId: string, text: string) {
   entries.get(paneId)?.terminal.paste(text);
 }
 
-/** 現在の選択範囲をコピーする。選択が無ければ false */
+/** 現在の選択範囲をコピーする。選択が無い（行末より先の空白だけを選んだ場合も含む）なら false */
 export function copyTerminalSelection(paneId: string): boolean {
   const terminal = entries.get(paneId)?.terminal;
-  if (!terminal?.hasSelection()) return false;
+  if (!terminal?.getSelection()) return false;
   copySelection(terminal);
   return true;
 }

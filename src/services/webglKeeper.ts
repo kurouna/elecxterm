@@ -48,11 +48,6 @@ export class WebglKeeper {
     this.load();
   }
 
-  /** いま WebGL で描いているか */
-  get active(): boolean {
-    return this.addon !== null;
-  }
-
   /** 望まれていてペインが表示されていれば WebGL を試し直す。表示・fit のたびに呼ばれる */
   resume(): void {
     if (this.stopped || !this.wanted || this.addon !== null || this.retryTimer !== null) return;

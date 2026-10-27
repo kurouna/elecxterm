@@ -26,4 +26,3 @@ portable-pty = "0.9"
 dashmap = "6.2"
 thiserror = "2.0"
 parking_lot = "0.12"
-tokio = { version = "1", features = ["full"] }

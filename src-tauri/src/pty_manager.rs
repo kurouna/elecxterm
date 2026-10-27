@@ -123,7 +123,7 @@ impl PtyManager {
             .or_else(|| home_dir().map(|p| p.to_string_lossy().into_owned()));
 
         type Spawned = (PtyPair, Box<dyn Child + Send>, String);
-        let (pair, child, shell) = tokio::task::spawn_blocking(move || -> Result<Spawned, String> {
+        let (pair, child, shell) = tauri::async_runtime::spawn_blocking(move || -> Result<Spawned, String> {
             let pty_system = NativePtySystem::default();
             let pair = pty_system
                 .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
@@ -212,7 +212,7 @@ impl PtyManager {
     pub async fn write_to_pty(&self, id: &str, data: Vec<u8>) -> Result<(), PtyError> {
         let instance = self.get_instance(id)?;
 
-        tokio::task::spawn_blocking(move || -> Result<(), String> {
+        tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
             let mut writer = instance.writer.lock();
             writer.write_all(&data).map_err(|e| e.to_string())?;
             writer.flush().map_err(|e| e.to_string())
@@ -228,7 +228,7 @@ impl PtyManager {
         let cols = cols.max(1);
         let instance = self.get_instance(id)?;
 
-        tokio::task::spawn_blocking(move || -> Result<(), String> {
+        tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
             let master = instance.master.lock();
             let mut size = instance.size.lock();
             // サイズが変わっていない場合、ConPTY が通知を発火せず TUI アプリが
@@ -259,7 +259,7 @@ impl PtyManager {
 
         // ClosePseudoConsole（master の drop）は出力が掃けるまでブロックしうるため、
         // kill と drop は blocking スレッドで行う。
-        tokio::task::spawn_blocking(move || {
+        tauri::async_runtime::spawn_blocking(move || {
             // 既に終了していれば kill は失敗するが、その場合は何もする必要がない
             let _ = instance.killer.lock().kill();
             drop(instance);

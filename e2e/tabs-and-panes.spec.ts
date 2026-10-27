@@ -85,6 +85,30 @@ test.describe("tabs", () => {
     await expectNoLeakedShells(page);
   });
 
+  test("an inline rename pins the name, but confirming the automatic name keeps it automatic", async ({ page }) => {
+    const [pane] = await paneIds(page);
+    await waitForPrompt(page, pane);
+    const tab = tabs(page).first();
+    const input = page.getByLabel("Tab name");
+
+    // 表示名のまま確定しても、タブ名はアクティブペインのディレクトリに追従し続ける
+    await tab.dblclick();
+    await input.press("Enter");
+    await expectFocusedPane(page, pane);
+    await runCommand(page, "cd C:\\Windows");
+    await expect(tab).toContainText("Windows");
+
+    // 名前を変えて確定すると固定され、cd しても変わらない
+    await tab.dblclick();
+    await input.fill("work");
+    await input.press("Enter");
+    await expect(tab).toContainText("work");
+    await expectFocusedPane(page, pane);
+    await runCommand(page, "cd C:\\Users");
+    await expect.poll(() => screenText(page, pane)).toMatch(/Users>\s*$/);
+    await expect(tab).toContainText("work");
+  });
+
   test("closing a tab with its close button destroys every shell in it", async ({ page }) => {
     await page.keyboard.press("Control+Shift+T");
     await page.keyboard.press("Control+Shift+D");
@@ -249,6 +273,20 @@ test.describe("panes", () => {
     await expect(dialog).toBeVisible();
     await page.keyboard.press("Enter");
     await expect(visiblePanes(page)).toHaveCount(1);
+    await expectNoLeakedShells(page);
+  });
+
+  test("closes a pane whose shell has exited without asking", async ({ page }) => {
+    await page.keyboard.press("Control+Shift+D");
+    const [, done] = await paneIds(page);
+    await waitForPrompt(page, done);
+    // exit を打つとコマンドの実行中にシェルが終わる（終わったシェルからはコマンドの終了が届かない）
+    await runCommand(page, "exit");
+    await expect.poll(() => screenText(page, done)).toContain("Process exited");
+
+    await page.keyboard.press("Control+Shift+W");
+    await expect(visiblePanes(page)).toHaveCount(1);
+    await expect(page.getByRole("dialog", { name: "Close pane?" })).toHaveCount(0);
     await expectNoLeakedShells(page);
   });
 

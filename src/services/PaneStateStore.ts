@@ -92,10 +92,6 @@ class PaneStateStore {
     this.notify(id);
   }
 
-  updateStatus(id: string, status: PaneStatus) {
-    this.update(id, { status });
-  }
-
   /** PTY 出力を受け取ったことを記録する（高頻度で呼ばれるため通知は状態遷移時のみ） */
   markOutput(id: string) {
     const now = Date.now();
