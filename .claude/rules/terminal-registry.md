@@ -21,6 +21,14 @@ and renders the header, find bar and exit banner — it must not own the lifecyc
   hit the new terminal.
 - The registry also hosts OSC 9;9 / OSC 7 cwd tracking, title/bell hooks, copy/paste key handling,
   copy-on-select (on mouse release) and the text snapshots the overview renders.
+- **win32-input-mode** (`services/win32Input.ts`): ConPTY asks for it with `CSI ? 9001 h` as each PTY
+  starts; while it is set, keydown/keyup go as `CSI Vk;Sc;Uc;Kd;Cs;Rc _`, as Windows Terminal sends them.
+  Through xterm's text ConPTY guessed keys back on a US layout: Ctrl+Space (NUL) reached Windows Emacs
+  `-nw` as `C-"` on a JIS keyboard, and Ctrl+/ and Ctrl+. sent nothing. Copy/paste keys are handled
+  first; IME composition, dead keys, AltGr and Shift+Insert stay xterm's text. Modifiers alone are not
+  sent, and a release only for a key whose press was sent (a shortcut's key sends nothing). Both input
+  paths go through one `input()`, which keeps Enter's restart and command-start handling. The mode is
+  dropped with the shell state on exit and restart; the new PTY asks again.
 
 ## IPC
 

@@ -8,6 +8,8 @@ import { expect, Page } from "@playwright/test";
 type MockHooks = {
   livePtys: () => string[];
   log: { cmd: string; id?: string; shell?: string }[];
+  /** PTY へ書き込まれた入力（win32-input-mode の列もそのまま） */
+  inputs: { id: string; data: string }[];
 };
 
 declare global {
@@ -51,6 +53,14 @@ export function livePtys(page: Page): Promise<string[]> {
 
 export function ptyLog(page: Page) {
   return page.evaluate(() => [...window.__ELECXTERM_MOCK__.log]);
+}
+
+/** ペインの PTY へ書き込まれた入力を、書き込まれた順につないだもの */
+export function ptyInput(page: Page, paneId: string): Promise<string> {
+  return page.evaluate(
+    (id) => window.__ELECXTERM_MOCK__.inputs.filter((i) => i.id === id).map((i) => i.data).join(""),
+    paneId
+  );
 }
 
 /** キーボードフォーカスを持っているペイン */

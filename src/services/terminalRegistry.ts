@@ -8,6 +8,7 @@ import { ptyBridge } from "../pty-bridge";
 import { paneStateStore } from "./PaneStateStore";
 import { paneElement, powerOn } from "./crt";
 import { WebglKeeper } from "./webglKeeper";
+import { PressedKeys, win32ModeChange } from "./win32Input";
 import type { CursorStyle } from "../types";
 
 /**
@@ -324,7 +325,22 @@ function createEntry(host: HTMLElement, options: TerminalAttachOptions): Interna
     return command || null;
   };
 
+  // --- win32-input-mode (CSI ? 9001 h/l) ---
+  // ConPTY は PTY の起動時に求める。再起動では新しい PTY が求め直すので、resetShellState で落とす。
+  let win32Input = false;
+  const pressed = new PressedKeys();
+  const inputMode = (set: boolean) => (params: (number | number[])[]) => {
+    const change = win32ModeChange(params, set);
+    if (change !== undefined) win32Input = change;
+    // 同じ列が名指すほかのモードは xterm に任せる
+    return false;
+  };
+  const decset = terminal.parser.registerCsiHandler({ prefix: "?", final: "h" }, inputMode(true));
+  const decrst = terminal.parser.registerCsiHandler({ prefix: "?", final: "l" }, inputMode(false));
+
   entry.resetShellState = () => {
+    win32Input = false;
+    pressed.clear();
     clearPromptEnd();
     running?.anchor?.marker.dispose();
     running = null;
@@ -354,35 +370,53 @@ function createEntry(host: HTMLElement, options: TerminalAttachOptions): Interna
   const bellDisposable = terminal.onBell(() => paneStateStore.markBell(paneId));
 
   // --- 入力 ---
-  const dataDisposable = terminal.onData((data) => {
+  // xterm の文字列も win32-input-mode の列も、この経路でシェルへ送る。
+  // `restart` は終了したペインを起動し直す Enter、`enter` はコマンドを実行する Enter。
+  const input = (data: string, keys: { restart: boolean; enter: boolean }) => {
     const { status } = paneStateStore.getPaneState(paneId);
     // 終了したペインでは Enter でシェルを再起動する
     if (status === "exited" || status === "error") {
-      if (data === "\r") restartTerminal(paneId);
+      if (keys.restart) restartTerminal(paneId);
       return;
     }
     // プロンプト上での Enter をコマンド開始とみなす（入力行は送信前に読む）
-    if (promptEnd && !running && data.includes("\r")) startCommand();
+    if (promptEnd && !running && keys.enter) startCommand();
     // ready を経由することで、PTY 起動前に打たれたキーも順序どおり送られる
     entry.ready.then((ok) => {
       if (ok) ptyBridge.write(entry.ptyId, data).catch(() => {});
     });
-  });
+  };
+  const dataDisposable = terminal.onData((data) =>
+    input(data, { restart: data === "\r", enter: data.includes("\r") })
+  );
 
-  // コピー & ペースト（Windows Terminal と同じ既定）。
-  // false を返したキーは xterm が処理せず、ブラウザ既定の paste イベントが
-  // xterm の textarea に届くため bracketed paste も xterm に任せられる。
   terminal.attachCustomKeyEventHandler((e) => {
-    if (e.type !== "keydown" || !e.ctrlKey || e.altKey || e.metaKey) return true;
-    const key = e.key.toLowerCase();
-    if (key === "v") return false;
-    if (key === "c" && (e.shiftKey || terminal.hasSelection())) {
-      copySelection(terminal);
-      if (!e.shiftKey) terminal.clearSelection();
-      e.preventDefault();
-      return false;
+    // コピー & ペースト（Windows Terminal と同じ既定）。
+    // false を返したキーは xterm が処理せず、ブラウザ既定の paste イベントが
+    // xterm の textarea に届くため bracketed paste も xterm に任せられる。
+    if (e.type === "keydown" && e.ctrlKey && !e.altKey && !e.metaKey) {
+      const key = e.key.toLowerCase();
+      if (key === "v") return false;
+      if (key === "c" && (e.shiftKey || terminal.hasSelection())) {
+        copySelection(terminal);
+        if (!e.shiftKey) terminal.clearSelection();
+        e.preventDefault();
+        return false;
+      }
     }
-    return true;
+    // ConPTY が求めていれば、キーを Windows のキーイベントのまま送る（win32Input.ts）。
+    // 表せないキー（IME の変換中など）は xterm に任せ、これまでどおり文字列で送る
+    if (!win32Input) return true;
+    const sequence = pressed.take(e);
+    if (sequence === null) return true;
+    // keypress と input で同じ文字がもう一度送られないように
+    e.preventDefault();
+    const down = e.type === "keydown";
+    // xterm が自分で送るときと同じく、打つと最下部へ戻る
+    if (down) terminal.scrollToBottom();
+    const enter = down && e.key === "Enter";
+    if (sequence !== "") input(sequence, { restart: enter, enter });
+    return false;
   });
 
   // 選択の自動コピー（Windows Terminal の copyOnSelect と同じく、マウスを離した時点で 1 回）。
@@ -401,7 +435,7 @@ function createEntry(host: HTMLElement, options: TerminalAttachOptions): Interna
   entry.disposeTerminal = () => {
     rootEl.removeEventListener("pointerup", onPointerUp);
     entry.resetShellState();
-    [oscCwd, oscFileUrl, osc133, titleDisposable, bellDisposable, dataDisposable, resizeDisposable]
+    [oscCwd, oscFileUrl, osc133, decset, decrst, titleDisposable, bellDisposable, dataDisposable, resizeDisposable]
       .forEach((d) => d.dispose());
     webgl.dispose();
     terminal.dispose();

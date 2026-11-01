@@ -160,7 +160,19 @@ function run(sh: FakeShell, input: string) {
   prompt(sh);
 }
 
-function onInput(sh: FakeShell, data: string) {
+/**
+ * 実機の ConPTY と同じく、win32-input-mode の列（`CSI Vk;Sc;Uc;Kd;Cs;Rc _`）を文字に戻す。
+ * 押下（Kd=1）の文字（Uc）だけを取り、離したキーと文字を持たないキーは捨てる。
+ */
+function fromWin32Input(data: string): string {
+  return data.replace(/\x1b\[(\d+);(\d+);(\d+);([01]);(\d+);(\d+)_/g, (_m, _vk, _sc, uc, kd) =>
+    kd === "1" && uc !== "0" ? String.fromCharCode(Number(uc)) : ""
+  );
+}
+
+function onInput(sh: FakeShell, raw: string) {
+  inputLog.push({ id: sh.id, data: raw });
+  const data = fromWin32Input(raw);
   for (const ch of data) {
     if (sh.timer !== null) {
       if (ch === "\x03") {
@@ -194,6 +206,8 @@ function onInput(sh: FakeShell, data: string) {
 
 /** e2e テスト（e2e/*.spec.ts）から PTY の生成・破棄を検証するための記録 */
 const ipcLog: { cmd: string; id?: string; shell?: string }[] = [];
+/** PTY へ書き込まれた入力（win32-input-mode の列もそのまま） */
+const inputLog: { id: string; data: string }[] = [];
 
 export function installTauriMock() {
   (window as unknown as { __ELECXTERM_MOCK__: unknown }).__ELECXTERM_MOCK__ = {
@@ -201,6 +215,7 @@ export function installTauriMock() {
     livePtys: () => [...shells.keys()],
     /** PTY に関わる IPC 呼び出しの履歴 */
     log: ipcLog,
+    inputs: inputLog,
   };
   mockWindows("main");
   mockIPC(
@@ -229,6 +244,8 @@ export function installTauriMock() {
             return sh.shell;
           }
           setTimeout(() => {
+            // ConPTY は起動時に win32-input-mode を求める
+            send(sh, "\x1b[?9001h");
             send(
               sh,
               isPwsh(sh)

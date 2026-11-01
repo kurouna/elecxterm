@@ -435,6 +435,30 @@ mod tests {
         assert!(out.contains("\x1b]9;9;C:\\Windows"), "cwd not reported: {out:?}");
     }
 
+    /// ConPTY が win32-input-mode を求め（CSI ? 9001 h）、その形で送ったキーを受け付けること。
+    /// 端末は src/services/win32Input.ts でキーをこの形にして送る。
+    #[cfg(windows)]
+    #[test]
+    #[ignore]
+    fn conpty_asks_for_and_takes_win32_input() {
+        // 1 文字を押下と離した分の 2 つの列にする（Vk;Sc;Uc;Kd;Cs;Rc）。英小文字と数字と空白と Enter だけ
+        fn key(c: char) -> String {
+            let (vk, sc) = match c {
+                '\r' => (13, 0x1c),
+                ' ' => (32, 0x39),
+                'a'..='z' => (c.to_ascii_uppercase() as u32, 0),
+                '0'..='9' => (c as u32, 0),
+                _ => unreachable!(),
+            };
+            let uc = c as u32;
+            format!("\x1b[{vk};{sc};{uc};1;0;1_\x1b[{vk};{sc};{uc};0;0;1_")
+        }
+        let typed: String = "echo w32ok\rexit\r".chars().map(key).collect();
+        let out = run_shell("cmd.exe", &typed);
+        assert!(out.contains("\x1b[?9001h"), "win32-input-mode not asked for: {out:?}");
+        assert!(out.contains("w32ok"), "keys sent as win32 input not taken: {out:?}");
+    }
+
     #[test]
     fn shell_name_matching() {
         assert!(is_shell("pwsh.exe", "pwsh"));

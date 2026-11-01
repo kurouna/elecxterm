@@ -11,7 +11,10 @@ paths:
 `npm run test:e2e` runs the Playwright suite in `e2e/` against the dev server with the IPC mock, using
 the installed Edge (`channel: "msedge"`). Run it after touching tab, pane or keybinding code.
 
-- `window.__ELECXTERM_MOCK__` exposes live PTY ids and an IPC log;
+- The mock shell asks for win32-input-mode (`CSI ? 9001 h`) as ConPTY does and decodes those keys back
+  to text, so every spec types through that path; `e2e/win32-input.spec.ts` checks the sequences.
+  `cargo test -- --ignored` checks the real ConPTY asks for it and takes them.
+- `window.__ELECXTERM_MOCK__` exposes live PTY ids, an IPC log and the raw PTY input (`inputs`);
   `window.__ELECXTERM_REGISTRY__` (dev only) exposes terminal snapshots.
 - Don't dynamic-import app modules from a test: after HMR that yields a second module instance.
 - `expectNoLeakedShells` asserts that live PTYs match the panes on screen.
