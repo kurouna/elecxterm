@@ -332,7 +332,8 @@ function SettingsBody({
         </Row>
       </Section>
 
-      <div className="flex justify-end border-t border-border-dim pt-4">
+      <div className="flex items-center justify-between border-t border-border-dim pt-4">
+        <span className="select-text font-mono text-[11px] text-tx-muted">elecxterm v{__APP_VERSION__}</span>
         <button
           type="button"
           onClick={() => {
